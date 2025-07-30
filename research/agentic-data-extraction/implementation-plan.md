@@ -314,11 +314,13 @@ zed::register_extension!(ZedMobileBridge);
 5. [ ] Ensure all tests still pass
 
 ### Phase 3: Event System Implementation (Week 3)
-1. [ ] Add event bus to `zed-agent-core`
-2. [ ] Wire up event emission in agent operations
-3. [ ] Create event aggregation for efficient updates
-4. [ ] Add event filtering and subscription management
-5. [ ] Test event flow end-to-end
+1. [ ] Investigate Zed's existing event systems (GPUI observers, subscriptions)
+2. [ ] Extract reusable event primitives to `zed-agent-core` if possible
+3. [ ] Add event bus to `zed-agent-core` (potentially based on existing patterns)
+4. [ ] Wire up event emission in agent operations
+5. [ ] Create event aggregation for efficient updates
+6. [ ] Add event filtering and subscription management
+7. [ ] Test event flow end-to-end
 
 ### Phase 4: Network Bridge Development (Week 4)
 1. [ ] Add WebSocket server to Zed (behind feature flag)
@@ -418,9 +420,29 @@ impl Thread {
 
 ### 5.3 Phase 3 Details: Event System
 
+#### Reusing Zed's Event Patterns
+
+**Note**: Before implementing a new event system, investigate and potentially extract Zed's existing event mechanisms:
+
+1. **GPUI's Observer Pattern**: 
+   - `cx.observe()`, `cx.subscribe()` patterns
+   - Could extract the non-GPUI parts into a reusable trait
+   
+2. **Existing Event Infrastructure**:
+   - Check `gpui::subscription` and related modules
+   - Look for patterns in `workspace::Event`, `project::Event`
+   - Consider extracting common event traits/interfaces
+
+3. **Benefits of Reuse**:
+   - Consistent event handling across Zed
+   - Developers already familiar with patterns
+   - Proven performance characteristics
+   - Less code to maintain
+
 #### Event Bus in Core
 ```rust
 // zed/crates/zed-agent-core/src/events/mod.rs
+// Could potentially be based on extracted Zed patterns
 pub struct EventBus {
     subscribers: Arc<RwLock<Vec<Box<dyn EventListener>>>>,
 }
@@ -443,7 +465,7 @@ impl Thread {
         // Update core
         self.core.messages.push(message.to_core());
         
-        // Emit event
+        // Emit event using potential hybrid approach
         if let Some(event_bus) = self.event_bus.as_ref() {
             event_bus.emit(AgentEvent::MessageAdded {
                 thread_id: self.core.id.clone(),
@@ -451,11 +473,31 @@ impl Thread {
             });
         }
         
-        // Continue with GPUI-specific logic
+        // Also use existing GPUI event system for backward compatibility
+        cx.emit(ThreadEvent::MessageAdded(message.id()));
         cx.notify();
     }
 }
 ```
+
+#### Extraction Strategy for Event Systems
+
+If Zed's event systems prove reusable:
+
+1. **Create `zed-events-core` crate**:
+   - Extract non-GPUI event traits
+   - Common subscription management
+   - Event aggregation utilities
+
+2. **Gradual Migration**:
+   - Start with agent events
+   - Prove the pattern works
+   - Expand to other subsystems
+
+3. **Maintain Compatibility**:
+   - Keep GPUI integration layer
+   - Bridge between core and GPUI events
+   - No breaking changes to existing code
 
 ### 5.4 Phase 4 Details: Network Bridge
 

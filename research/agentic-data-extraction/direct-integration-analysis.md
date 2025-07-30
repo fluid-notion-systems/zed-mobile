@@ -141,7 +141,44 @@ impl Thread {
 }
 ```
 
-### 5.3 Challenge: Migration Complexity
+### 5.3 Opportunity: Reusing Existing Event Infrastructure
+**Insight**: Zed already has sophisticated event systems that could be extracted
+
+**Investigation Areas**:
+1. **GPUI Event Patterns**:
+   - `cx.observe()` and `cx.subscribe()` mechanisms
+   - Entity update notifications
+   - Subscription management infrastructure
+
+2. **Existing Event Types**:
+   - `workspace::Event`, `project::Event`, etc.
+   - Common patterns across subsystems
+   - Event aggregation and batching logic
+
+3. **Extraction Potential**:
+   ```rust
+   // Could extract non-GPUI parts into zed-events-core
+   pub trait EventEmitter {
+       fn emit(&self, event: impl Event);
+       fn subscribe(&self, handler: impl EventHandler);
+   }
+   
+   // Reuse existing patterns
+   pub trait Observable<T> {
+       fn observe(&self, f: impl Fn(&T) + 'static);
+   }
+   ```
+
+4. **Benefits of Extraction**:
+   - Consistent event handling across all of Zed
+   - Proven performance characteristics
+   - Familiar patterns for contributors
+   - Reduced code duplication
+   - Foundation for future event-driven features
+
+**Recommendation**: Before implementing new event infrastructure, audit Zed's existing systems for reusable components that could be extracted alongside the PODO types.
+
+### 5.4 Challenge: Migration Complexity
 **Problem**: Large codebase to migrate
 
 **Solution**: Feature flags and gradual rollout
@@ -191,7 +228,14 @@ pub enum AgentEvent {
 }
 ```
 
-### 7.3 Feature Additions
+### 7.3 Event System Evolution
+If Zed's event systems are successfully extracted:
+- Core event infrastructure becomes reusable
+- Mobile app can use same event patterns
+- Third-party integrations get consistent APIs
+- Event-sourcing patterns become possible
+
+### 7.4 Feature Additions
 - Add fields to core types
 - Extend event system
 - New serialization formats
