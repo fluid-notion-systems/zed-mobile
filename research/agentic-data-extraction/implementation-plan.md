@@ -1,8 +1,23 @@
-# Implementation Plan: PODO Extraction and Zed Extension
+# Implementation Plan: PODO Extraction and Zed Core Integration
 
 ## Overview
 
-This document outlines the implementation plan for extracting Plain Old Data Objects from Zed's agent implementation and creating a Zed extension that exposes agent data to the mobile app.
+This document outlines the implementation plan for extracting Plain Old Data Objects from Zed's agent implementation and updating Zed itself to use these core types directly. This creates a single source of truth for agent data structures that can be shared between Zed and the mobile app.
+
+## Why This Approach is Better
+
+### Advantages
+1. **Single Source of Truth**: One set of data structures used everywhere
+2. **No API Extensions Needed**: Avoids complexity of extending Zed's extension API
+3. **Better Type Safety**: Direct use of types in Zed ensures consistency
+4. **Easier Maintenance**: Changes to data structures automatically propagate
+5. **Performance**: No conversion overhead between internal and external types
+6. **Cleaner Architecture**: Separation of concerns between data and UI
+
+### Potential Challenges
+1. **Refactoring Effort**: Need to update existing agent code
+2. **GPUI Dependencies**: Must carefully extract without breaking existing functionality
+3. **Backward Compatibility**: Need to ensure existing features continue working
 
 ## 1. PODO Extraction - `zed-agent-core` Crate
 
@@ -285,59 +300,225 @@ zed::register_extension!(ZedMobileBridge);
 ## 4. Implementation Steps
 
 ### Phase 1: PODO Extraction (Week 1)
-1. [ ] Create `zed-agent-core` crate
-2. [ ] Define all PODO types
-3. [ ] Implement serialization
-4. [ ] Add conversion from GPUI types
-5. [ ] Write comprehensive tests
+1. [ ] Create `zed-agent-core` crate in `zed/crates/`
+2. [ ] Define all PODO types without GPUI dependencies
+3. [ ] Implement serde serialization/deserialization
+4. [ ] Add builder patterns for complex types
+5. [ ] Write comprehensive unit tests
 
-### Phase 2: Zed API Extension (Week 2)
-1. [ ] Add agent interface to WIT
-2. [ ] Implement agent proxy trait
-3. [ ] Create extension bridge in agent crate
-4. [ ] Wire up event subscriptions
-5. [ ] Test API functionality
+### Phase 2: Update Zed Agent to Use PODOs (Week 2)
+1. [ ] Add `zed-agent-core` as dependency to `agent` crate
+2. [ ] Replace internal types with PODO types where possible
+3. [ ] Implement conversion layer for GPUI-specific parts
+4. [ ] Update thread store to emit PODO events
+5. [ ] Ensure all tests still pass
 
-### Phase 3: Extension Development (Week 3)
-1. [ ] Create extension project
-2. [ ] Implement WebSocket server
-3. [ ] Add authentication
-4. [ ] Handle all agent operations
-5. [ ] Test with mock client
+### Phase 3: Event System Implementation (Week 3)
+1. [ ] Add event bus to `zed-agent-core`
+2. [ ] Wire up event emission in agent operations
+3. [ ] Create event aggregation for efficient updates
+4. [ ] Add event filtering and subscription management
+5. [ ] Test event flow end-to-end
 
-### Phase 4: Integration Testing (Week 4)
-1. [ ] Test with Flutter app
-2. [ ] Performance optimization
-3. [ ] Security hardening
-4. [ ] Documentation
-5. [ ] Release preparation
+### Phase 4: Network Bridge Development (Week 4)
+1. [ ] Add WebSocket server to Zed (behind feature flag)
+2. [ ] Implement authentication mechanism
+3. [ ] Create JSON-RPC or similar protocol
+4. [ ] Handle connection lifecycle
+5. [ ] Test with Flutter client
 
-## 5. Alternative Approaches
+## 5. Detailed Implementation Plan
 
-### 5.1 If Extension API Changes Are Not Possible
+### 5.1 Phase 1 Details: PODO Extraction
 
-If we cannot modify Zed's extension API, we could:
-
-1. **Fork Zed**: Maintain a fork with agent API exposed
-2. **Plugin System**: Create a plugin system in the agent module
-3. **IPC Bridge**: Use local IPC (Unix sockets, named pipes)
-4. **File-based Communication**: Write events to local files
-
-### 5.2 Direct Integration Option
-
-Alternatively, add the WebSocket server directly to Zed:
-
+#### Create Core Types
 ```rust
-// In zed/src/mobile_bridge.rs
-#[cfg(feature = "mobile-bridge")]
-mod mobile_bridge {
-    pub fn start_server(agent: Arc<Agent>) {
-        // WebSocket server implementation
+// zed/crates/zed-agent-core/src/types/thread.rs
+use serde::{Serialize, Deserialize};
+use chrono::{DateTime, Utc};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Thread {
+    pub id: ThreadId,
+    pub title: Option<String>,
+    pub messages: Vec<Message>,
+    pub profile_id: ProfileId,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub status: ThreadStatus,
+    pub token_usage: TokenUsage,
+}
+
+// Builder pattern for complex construction
+impl Thread {
+    pub fn builder(id: ThreadId) -> ThreadBuilder {
+        ThreadBuilder::new(id)
     }
 }
 ```
 
-## 6. Testing Strategy
+#### Integration Points
+```rust
+// In zed/crates/agent/src/thread.rs
+use zed_agent_core::{Thread as CoreThread, Message as CoreMessage};
+
+impl Thread {
+    // Convert internal Thread to PODO
+    pub fn to_core(&self) -> CoreThread {
+        CoreThread {
+            id: self.id.clone().into(),
+            title: self.summary.as_ref().map(|s| s.text.clone()),
+            messages: self.messages.iter().map(|m| m.to_core()).collect(),
+            // ... other fields
+        }
+    }
+    
+    // Update from PODO (for testing, imports, etc)
+    pub fn from_core(core: CoreThread, cx: &mut ModelContext<Self>) -> Self {
+        // Implementation
+    }
+}
+```
+
+### 5.2 Phase 2 Details: Zed Integration
+
+#### Update Cargo.toml
+```toml
+# zed/crates/agent/Cargo.toml
+[dependencies]
+zed-agent-core = { path = "../zed-agent-core" }
+```
+
+#### Refactor Agent to Use PODOs
+```rust
+// Before: Tightly coupled to GPUI
+pub struct Thread {
+    id: ThreadId,
+    messages: Vec<Entity<Message>>,
+    // ... GPUI-specific fields
+}
+
+// After: PODO core with GPUI wrapper
+pub struct Thread {
+    core: zed_agent_core::Thread,
+    messages_entities: Vec<Entity<Message>>, // Keep GPUI entities separate
+    // ... GPUI-specific fields only
+}
+
+impl Thread {
+    pub fn core(&self) -> &zed_agent_core::Thread {
+        &self.core
+    }
+    
+    pub fn core_mut(&mut self) -> &mut zed_agent_core::Thread {
+        &mut self.core
+    }
+}
+```
+
+### 5.3 Phase 3 Details: Event System
+
+#### Event Bus in Core
+```rust
+// zed/crates/zed-agent-core/src/events/mod.rs
+pub struct EventBus {
+    subscribers: Arc<RwLock<Vec<Box<dyn EventListener>>>>,
+}
+
+impl EventBus {
+    pub fn emit(&self, event: AgentEvent) {
+        let subscribers = self.subscribers.read();
+        for subscriber in subscribers.iter() {
+            subscriber.on_event(&event);
+        }
+    }
+}
+```
+
+#### Wire Events in Agent
+```rust
+// In thread operations
+impl Thread {
+    pub fn add_message(&mut self, message: Message, cx: &mut ModelContext<Self>) {
+        // Update core
+        self.core.messages.push(message.to_core());
+        
+        // Emit event
+        if let Some(event_bus) = self.event_bus.as_ref() {
+            event_bus.emit(AgentEvent::MessageAdded {
+                thread_id: self.core.id.clone(),
+                message: message.to_core(),
+            });
+        }
+        
+        // Continue with GPUI-specific logic
+        cx.notify();
+    }
+}
+```
+
+### 5.4 Phase 4 Details: Network Bridge
+
+#### WebSocket Server in Zed
+```rust
+// zed/crates/zed/src/mobile_bridge.rs
+#[cfg(feature = "mobile-bridge")]
+pub mod mobile_bridge {
+    use zed_agent_core::{EventBus, AgentEvent};
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::accept_async;
+    
+    pub struct MobileBridge {
+        port: u16,
+        event_bus: Arc<EventBus>,
+    }
+    
+    impl MobileBridge {
+        pub async fn start(&self) -> Result<()> {
+            let addr = format!("127.0.0.1:{}", self.port);
+            let listener = TcpListener::bind(&addr).await?;
+            
+            log::info!("Mobile bridge listening on {}", addr);
+            
+            while let Ok((stream, _)) = listener.accept().await {
+                let event_bus = self.event_bus.clone();
+                tokio::spawn(handle_connection(stream, event_bus));
+            }
+            
+            Ok(())
+        }
+    }
+}
+```
+
+#### Feature Flag in Cargo.toml
+```toml
+# zed/Cargo.toml
+[features]
+mobile-bridge = ["tokio-tungstenite", "zed-agent-core/events"]
+```
+
+## 6. Migration Strategy
+
+### 6.1 Gradual Migration
+1. Start with read-only data (Thread, Message display)
+2. Add write operations (send message, create thread)
+3. Implement real-time updates (streaming, events)
+4. Full feature parity
+
+### 6.2 Testing During Migration
+- Maintain existing test suite
+- Add tests for PODO conversions
+- Test both old and new code paths
+- Performance benchmarks
+
+### 6.3 Rollback Plan
+- Keep changes behind feature flags initially
+- Maintain backward compatibility
+- Document all breaking changes
+- Provide migration guides
+
+## 7. Testing Strategy
 
 ### Unit Tests
 - Test PODO conversions
@@ -354,7 +535,7 @@ mod mobile_bridge {
 - Performance under load
 - Network failure scenarios
 
-## 7. Security Considerations
+## 8. Security Considerations
 
 ### Authentication
 - Generate secure token on first connection
@@ -371,7 +552,7 @@ mod mobile_bridge {
 - Optional TLS support
 - Rate limiting
 
-## 8. Performance Considerations
+## 9. Performance Considerations
 
 ### Event Batching
 - Batch rapid message updates
@@ -388,7 +569,7 @@ mod mobile_bridge {
 - Delta updates for message streaming
 - Binary protocol option (MessagePack)
 
-## 9. Success Criteria
+## 10. Success Criteria
 
 1. **Functionality**: All agent data accessible via extension
 2. **Performance**: < 50ms event latency
@@ -396,10 +577,42 @@ mod mobile_bridge {
 4. **Security**: Secure authentication, no data leaks
 5. **Maintainability**: Clean separation, comprehensive tests
 
-## 10. Next Steps
+## 11. Next Steps
 
-1. **Validate Approach**: Discuss with Zed team
-2. **Prototype PODO**: Create minimal extraction
-3. **Test Extension API**: Verify capabilities
-4. **Build MVP**: Basic event streaming
-5. **Iterate**: Based on testing feedback
+1. **Create `zed-agent-core` crate**: Start with basic types
+2. **Prototype Integration**: Update one part of agent to use PODOs
+3. **Measure Impact**: Performance and code clarity
+4. **Get Team Buy-in**: Present approach to Zed maintainers
+5. **Implement Incrementally**: One module at a time
+
+## 12. Example PR Structure
+
+### PR 1: Introduce zed-agent-core
+- Add new crate with basic types
+- No integration yet
+- Comprehensive tests
+
+### PR 2: Use PODOs in Thread
+- Update Thread to use core types
+- Maintain full compatibility
+- Benchmark performance
+
+### PR 3: Add Event System
+- Implement event bus
+- Wire up basic events
+- Behind feature flag
+
+### PR 4: Mobile Bridge
+- Add WebSocket server
+- Authentication system
+- Flutter integration tests
+
+## 13. Conclusion
+
+This approach of having Zed use `zed-agent-core` directly provides the cleanest architecture:
+- Single source of truth for data structures
+- No complex extension API changes needed
+- Better maintainability and type safety
+- Clear separation between data and UI concerns
+
+The gradual migration strategy ensures we can deliver value incrementally while maintaining stability.
