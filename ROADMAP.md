@@ -8,13 +8,13 @@ This roadmap outlines the development phases for Zed Mobile, focusing on creatin
 
 - [ ] we will be using hotrun(?) to push to my device, and also run in desktop, hotrun both
 - [ ] Make code changes to get a feature working. ONE FEATURE AT A TIME. no oneshotting.
-- [ ] When i indicate that the app works as expected, git commit and push.
+- [ ] When i indicate that the app works as expected, update the ROADMAP.md file to check off the task, and git commit and push.
 
 ## Phase 1: Basic UI (Weeks 1-2)
 
 ### Flutter UI Foundation
 - [x] Project setup with dependencies
-- [ ] Basic navigation structure
+- [x] Basic navigation structure
 - [ ] Theme and design system
 - [ ] Core UI components
 
