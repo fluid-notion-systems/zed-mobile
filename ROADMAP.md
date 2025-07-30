@@ -4,96 +4,16 @@
 
 This roadmap outlines the development phases for Zed Mobile, focusing on creating a mobile companion app for Zed's agentic panel. The project is divided into four main tracks that can partially run in parallel.
 
-## Timeline Overview
+## Development Guidelines
 
-```
-Week 1-2:   Foundation & Research
-Week 3-4:   Core Data Structure Extraction
-Week 5-6:   FFI Bridge Implementation
-Week 7-8:   Basic UI & Integration
-Week 9-10:  Network Communication
-Week 11-12: Advanced Features
-Week 13-14: Polish & Optimization
-Week 15-16: Beta Testing & Launch Prep
-```
+- [ ] we will be using hotrun(?) to push to my device, and also run in desktop, hotrun both
+- [ ] Make code changes to get a feature working. ONE FEATURE AT A TIME. no oneshotting.
+- [ ] When i indicate that the app works as expected, git commit and push.
 
-## Phase 1: Foundation (Weeks 1-2)
-
-### Research & Architecture
-- [ ] Analyze Zed's agent panel implementation
-- [ ] Document GPUI dependencies to remove
-- [ ] Design GPUI-free architecture
-- [ ] Set up development environment
-- [ ] Create project structure
-
-### Deliverables
-- Architecture decision document
-- Development environment setup guide
-- Initial project scaffolding
-
-## Phase 2: Data Structure Extraction (Weeks 3-4)
-
-### Extract Core Types
-- [ ] Create `zed-agent-core` crate without GPUI dependencies
-- [ ] Extract Thread, Message, and ToolCall structures
-- [ ] Remove Entity<T> and Context<T> wrappers
-- [ ] Implement serialization for all types
-
-### Implementation Tasks
-```rust
-// Key structures to extract:
-- Thread, ThreadId, ThreadSummary
-- Message, MessageId, MessageSegment
-- ToolCall, ToolCallStatus
-- AgentContext, ContextId
-- TokenUsage, ThreadError
-```
-
-### Testing
-- [ ] Unit tests for all extracted types
-- [ ] Serialization/deserialization tests
-- [ ] Memory safety tests
-
-### Deliverables
-- `zed-agent-core` crate
-- Type documentation
-- Test suite
-
-## Phase 3: FFI Bridge (Weeks 5-6)
-
-### Bridge Implementation
-- [ ] Create `zed-mobile-bridge` crate
-- [ ] Implement C-compatible FFI layer
-- [ ] Add memory management utilities
-- [ ] Create event streaming system
-
-### Core Functions
-```rust
-// Essential FFI functions:
-- zed_mobile_init()
-- zed_mobile_create_thread()
-- zed_mobile_send_message()
-- zed_mobile_get_messages()
-- zed_mobile_subscribe_events()
-- zed_mobile_poll_event()
-```
-
-### Platform Integration
-- [ ] iOS static library build
-- [ ] Android shared library build
-- [ ] Flutter FFI bindings
-- [ ] Memory leak detection
-
-### Deliverables
-- Platform libraries (.a, .so)
-- Flutter dart:ffi bindings
-- FFI documentation
-- Memory management guide
-
-## Phase 4: Basic UI (Weeks 7-8)
+## Phase 1: Basic UI (Weeks 1-2)
 
 ### Flutter UI Foundation
-- [ ] Project setup with dependencies
+- [x] Project setup with dependencies
 - [ ] Basic navigation structure
 - [ ] Theme and design system
 - [ ] Core UI components
@@ -125,6 +45,78 @@ Week 15-16: Beta Testing & Launch Prep
 - Basic functional UI
 - Component library
 - State management architecture
+
+## Phase 2: Foundation & Research (Weeks 3-4)
+
+### Research & Architecture
+- [ ] Analyze Zed's agent panel implementation
+- [ ] Document GPUI dependencies to remove
+- [ ] Design GPUI-free architecture
+- [ ] Refine project structure
+
+### Deliverables
+- Architecture decision document
+- Initial project scaffolding
+- Research documentation
+
+## Phase 3: Data Structure Extraction (Weeks 5-6)
+
+### Extract Core Types
+- [ ] Create `zed-agent-core` crate without GPUI dependencies
+- [ ] Extract Thread, Message, and ToolCall structures
+- [ ] Remove Entity<T> and Context<T> wrappers
+- [ ] Implement serialization for all types
+
+### Implementation Tasks
+```rust
+// Key structures to extract:
+- Thread, ThreadId, ThreadSummary
+- Message, MessageId, MessageSegment
+- ToolCall, ToolCallStatus
+- AgentContext, ContextId
+- TokenUsage, ThreadError
+```
+
+### Testing
+- [ ] Unit tests for all extracted types
+- [ ] Serialization/deserialization tests
+- [ ] Memory safety tests
+
+### Deliverables
+- `zed-agent-core` crate
+- Type documentation
+- Test suite
+
+## Phase 4: FFI Bridge (Weeks 7-8)
+
+### Bridge Implementation
+- [ ] Create `zed-mobile-bridge` crate
+- [ ] Implement C-compatible FFI layer
+- [ ] Add memory management utilities
+- [ ] Create event streaming system
+
+### Core Functions
+```rust
+// Essential FFI functions:
+- zed_mobile_init()
+- zed_mobile_create_thread()
+- zed_mobile_send_message()
+- zed_mobile_get_messages()
+- zed_mobile_subscribe_events()
+- zed_mobile_poll_event()
+```
+
+### Platform Integration
+- [ ] iOS static library build
+- [ ] Android shared library build
+- [ ] Flutter FFI bindings
+- [ ] Memory leak detection
+
+### Deliverables
+- Platform libraries (.a, .so)
+- Flutter dart:ffi bindings
+- FFI documentation
+- Memory management guide
 
 ## Phase 5: Network Communication (Weeks 9-10)
 
@@ -241,7 +233,7 @@ interface AgentUpdate {
 ## Parallel Development Tracks
 
 ### Track A: Core Development
-Weeks 1-8: Foundation → Data Structures → FFI → Basic UI
+Weeks 1-8: Basic UI → Foundation → Data Structures → FFI
 
 ### Track B: Zed Integration
 Weeks 5-10: Extension Development → Network Protocol → Testing
