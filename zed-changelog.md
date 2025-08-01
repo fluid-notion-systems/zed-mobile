@@ -2,24 +2,26 @@
 
 This changelog tracks modifications made to the vendored Zed codebase for the mobile integration.
 
-## 2024-01-XX - Agent Proto Integration
+## 2024-01-XX - Agent Proto Definitions
+
+### Context
+After initially implementing zed-agent-core integration with event bridge and core type conversions, we decided to change approach. The zed-agent-core related commits were backed out cleanly using git reset and cherry-pick to preserve only the proto definitions.
 
 ### Added
 
 #### Proto Definitions (`vendor/zed/crates/proto/proto/agent.proto`)
 - Created comprehensive protobuf definitions for all agent-related structures:
-  - Core types: `ThreadId`, `PromptId`, `MessageId`, `Thread`, `Message`, `MessageSegment`
+  - Core types: `ThreadId`, `PromptId`, `MessageId`, `Thread`, `AgentMessage`, `MessageSegment`
   - State management: `ThreadSummary`, `DetailedSummaryState`, `QueueState`, `ThreadCheckpoint`
   - Token usage: `TokenUsage`, `TotalTokenUsage`, `TokenUsageRatio`, `ExceededWindowError`
   - Tool integration: `ToolUseSegment`, `PendingToolUse`, `ToolUseStatus`
-  - Events: `ThreadEvent`, `AgentEvent` with comprehensive event types
+  - Events: `ThreadEvent` with comprehensive event types
   - RPC messages for agent operations (subscribe, create thread, send message, etc.)
 
-#### Proto Conversion Module (`vendor/zed/crates/agent/src/proto/mod.rs`)
-- Added bidirectional conversion implementations between Rust types and Proto messages
-- Helper functions for thread serialization (`thread_to_proto()`)
-- Role conversions with error handling
-- Unit tests for core conversions
+#### Proto Conversion Module Stub (`vendor/zed/crates/agent/src/proto/mod.rs`)
+- Added placeholder module for future proto conversions
+- Currently contains conversion implementations between agent crate types and proto messages
+- Includes helper function `thread_to_proto()` (to be completed when event routing is implemented)
 
 #### Proto Registration (`vendor/zed/crates/proto/src/proto.rs`)
 - Added agent messages to the `messages!` macro:
@@ -35,8 +37,19 @@ This changelog tracks modifications made to the vendored Zed codebase for the mo
 #### Agent Module (`vendor/zed/crates/agent/src/agent.rs`)
 - Added `pub mod proto;` to expose the proto conversion module
 
-#### Build Configuration (`vendor/zed/crates/zed-agent-core/Cargo.toml`)
-- Fixed circular dependency in proto feature: changed `proto = ["proto", "anyhow"]` to `proto = ["dep:proto", "anyhow"]`
+### Removed (via git reset)
+- `zed-agent-core` crate dependency and all related code
+- `event_bridge` module and EventBridge implementation
+- `core_conversion` module
+- `to_core()` and `messages_to_core()` methods from Thread
+- All `Into<zed_agent_core::*>` trait implementations
+
+#### Proto Build Fixes
+- Renamed `Message` to `AgentMessage` in agent.proto to avoid conflict with prost's `Message` trait
+- Renamed `Stopped` to `AgentStopped` in agent.proto to avoid conflict with debugger.proto's `DapThreadStatus::Stopped`
+- Replaced `google.protobuf.Timestamp` with Zed's custom `Timestamp` message to avoid serde serialization issues
+- Updated imports from `import "google/protobuf/timestamp.proto"` to `import "worktree.proto"`
+- Added all agent RPC messages to the Envelope in zed.proto (messages 368-379)
 
 ### Technical Notes
 
@@ -52,12 +65,23 @@ This changelog tracks modifications made to the vendored Zed codebase for the mo
 - All proto messages include serde serialization support via the build configuration
 - The integration maintains backward compatibility with optional fields in proto3
 
+### Build and Test Status
+
+The proto build now completes successfully:
+```bash
+cd vendor/zed/crates/proto && cargo build
+# Finished `dev` profile [unoptimized + debuginfo] target(s) in 34.77s
+```
+
 ### TODO
 
-The following conversions are marked as TODO in the proto module and may need implementation:
-- `LoadedContext` conversion
-- `AgentContextHandle` conversion  
-- `PendingCompletion` conversion
-- `ConfiguredModel` conversion
-- `DetailedSummaryState` full implementation
-- `ProjectSnapshot` conversion
+The proto conversion module currently contains placeholder implementations. Full conversions will be implemented when the event routing and collab server handlers are added in Stage 2.
+
+### Git History Note
+
+The following commits were backed out to remove zed-agent-core dependencies:
+- `2706750aa8` integration tests for event_bridge  
+- `bce2d4aad5` updates
+- `1bedc5a6e2` feat(agent): Implement EventBridge for core event system integration
+- `edcac123d3` feat(agent): Add core type usage in Thread serialization
+- `8
