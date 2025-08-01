@@ -6,9 +6,9 @@
 - [x] **Phase 2**: ThreadStore client integration (COMPLETED)
   - [x] Simple event forwarding without batching
   - [x] Basic proto conversions
-  - [x] **Client connection management**
+  - [x] Client connection management
 - [ ] **Phase 3**: Collab server handlers (CURRENT)
-  - [ ] **Subscription management** ← **WE ARE HERE**
+  - [ ] Subscription management ← **WE ARE HERE**
   - [ ] Event broadcasting
   - [ ] Security validation
 - [ ] **Phase 4**: Mobile client implementation
