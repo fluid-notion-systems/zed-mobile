@@ -39,6 +39,11 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 - [x] Define RPC service methods (Subscribe, GetThreads, etc.)
 - [x] Generate Rust code from proto definitions
 - [x] Add proto conversion methods to agent
+- [ ] Wire up event routing for agent events
+  - [ ] Create event handler in crates/agent to emit ThreadEvents
+  - [ ] Implement ThreadEvent to proto conversion
+  - [ ] Set up event subscription system
+  - [ ] Test event flow from agent actions to proto messages
 
 ### Stage 2: Server Implementation
 - [ ] Add agent subscription management to collab server
