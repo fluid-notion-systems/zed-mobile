@@ -152,6 +152,10 @@ See the [research directory](./research/) for:
 - [Voice Input Technologies](./research/voice-input.md)
 - [Real-time Communication Protocols](./research/realtime-protocols.md)
 
+## Documentation
+
+- [Using Zed's Local Collaboration Server](./docs/zed-local-collab.md) - How to use the existing Zed collaboration server for mobile development
+
 ## License
 
 This project is licensed under the same terms as Zed. See [LICENSE](LICENSE) for details.
