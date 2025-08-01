@@ -34,24 +34,24 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 ## 🚧 Phase 2: Collab Server Integration (Current)
 
 ### Stage 1: Protocol Definition
-- [ ] Create proto/agent.proto with agent-specific messages
-- [ ] Define AgentEvent protobuf messages
-- [ ] Define RPC service methods (Subscribe, GetThreads, etc.)
-- [ ] Generate Rust code from proto definitions
-- [ ] Add proto conversion methods to zed-agent-core
+- [x] Create proto/agent.proto with agent-specific messages
+- [x] Define AgentEvent protobuf messages (maps to ThreadEvent from crates/agent)
+- [x] Define RPC service methods (Subscribe, GetThreads, etc.)
+- [x] Generate Rust code from proto definitions
+- [x] Add proto conversion methods to agent
 
 ### Stage 2: Server Implementation
 - [ ] Add agent subscription management to collab server
-- [ ] Implement event routing for agent events
+- [ ] Implement event routing for agent events (ThreadEvent -> proto)
 - [ ] Add authentication/authorization checks
 - [ ] Handle connection lifecycle and cleanup
-<!--- [ ] Implement rate limiting for events-->
+- [ ] Implement rate limiting for events
 - [ ] Add metrics and monitoring
 
 ### Stage 3: Desktop Bridge
 - [ ] Create AgentCollabBridge struct
-- [ ] Connect EventBus to collab client
-- [ ] Implement proto conversion for all event types
+- [ ] Listen to ThreadEvent emissions from crates/agent
+- [ ] Implement ThreadEvent -> proto conversion
 - [ ] Add reconnection handling
 - [ ] Test end-to-end event flow
 - [ ] Handle error cases and recovery

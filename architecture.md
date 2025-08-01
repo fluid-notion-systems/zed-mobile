@@ -52,6 +52,8 @@ graph TB
 
 ### 1. zed-agent-core Crate
 
+**Note: This crate was initially created for a parallel agent system but will be removed. The actual implementation will integrate directly with the existing `crates/agent/` system which already has Thread, Message, and ThreadEvent types.**
+
 The foundational data model and event system, providing:
 
 ```rust
@@ -85,9 +87,11 @@ pub enum AgentEvent {
 
 ### 2. Collab Server Integration
 
-The collab server acts as the central hub for all agent-related communication:
+The collab server acts as the central hub for all agent-related communication, bridging the existing `crates/agent/` system with mobile clients:
 
 #### 2.1 Protocol Extensions
+The `agent.proto` file defines messages that map to the existing `crates/agent/` system's Thread and ThreadEvent types. This is separate from `ai.proto` which is used by the older assistant context system:
+
 ```protobuf
 service AgentService {
     // Subscribe to agent events (real-time)
@@ -101,15 +105,17 @@ service AgentService {
     rpc SendAgentCommand(AgentCommand) returns (CommandResponse);
 }
 
+// Maps to crates/agent/src/thread.rs ThreadEvent enum
 message AgentEvent {
     string event_id = 1;                    // Unique event identifier
     google.protobuf.Timestamp timestamp = 2; // Event timestamp
     oneof event {
-        ThreadCreated thread_created = 10;
-        MessageAdded message_added = 11;
-        MessageStreaming message_streaming = 12;
-        ToolUseStarted tool_use_started = 13;
-        // ... other event types
+        // Maps to ThreadEvent variants
+        MessageAdded message_added = 10;
+        StreamedAssistantText streamed_text = 11;
+        StreamedToolUse streamed_tool_use = 12;
+        ToolFinished tool_finished = 13;
+        // ... other ThreadEvent variants
     }
 }
 
@@ -164,32 +170,33 @@ let subscribe_request = SubscribeRequest {
 ### 3. Desktop Integration
 
 #### 3.1 Agent Bridge
-Connects the local agent system to the collab server:
+Connects the existing agent system to the collab server:
 
 ```rust
 pub struct AgentCollabBridge {
-    client: Arc<Client>,           // Collab client
-    event_bus: Model<EventBus>,    // From zed-agent-core
+    client: Arc<Client>,              // Collab client
+    thread_store: Entity<ThreadStore>, // Existing thread store
     active_subscriptions: HashSet<String>,
 }
 ```
 
 **Responsibilities:**
-- Convert core events to proto format
+- Listen to ThreadEvent emissions from crates/agent
+- Convert ThreadEvent to proto AgentEvent format
 - Send events through collab connection
 - Handle subscription lifecycle
 - Manage reconnection state
 
 #### 3.2 Event Flow
 ```
-1. User interacts with Agent Panel
-2. GPUI event generated
-3. EventBridge converts to core event
-4. EventBus distributes to subscribers
-5. AgentCollabBridge receives event
-6. Converts to proto and sends via collab
-7. Collab server routes to subscribers
-8. Mobile clients receive and render
+1. User interacts with Agent Panel in Zed
+2. Thread emits ThreadEvent (existing crates/agent event system)
+3. AgentCollabBridge listens to ThreadEvent emissions
+4. Converts ThreadEvent to proto AgentEvent
+5. Sends through collab connection
+6. Collab server routes to subscribed clients
+7. Mobile clients receive proto events
+8. Convert back to display in mobile UI
 ```
 
 ### 4. Mobile Architecture
@@ -337,15 +344,16 @@ The architecture supports adding other Zed panels:
 
 ### Collab Server
 - **Language**: Rust
-- **Protocol**: gRPC/Protocol Buffers
+- **Protocol**: gRPC/Protocol Buffers (agent.proto for agent events)
 - **Database**: PostgreSQL
 - **Caching**: Redis
 
 ### Mobile Clients
 - **iOS**: Swift/SwiftUI
 - **Android**: Kotlin/Compose
+- **Flutter**: Initial MVP implementation
 - **Shared Logic**: Rust (via FFI) or Kotlin Multiplatform
-- **State**: SwiftUI/Compose native state
+- **State**: SwiftUI/Compose native state (Riverpod for Flutter)
 
 ## Key Design Principles
 
