@@ -45,7 +45,7 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 - [ ] Implement event routing for agent events
 - [ ] Add authentication/authorization checks
 - [ ] Handle connection lifecycle and cleanup
-- [ ] Implement rate limiting for events
+<!--- [ ] Implement rate limiting for events-->
 - [ ] Add metrics and monitoring
 
 ### Stage 3: Desktop Bridge

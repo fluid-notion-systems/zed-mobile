@@ -102,21 +102,64 @@ service AgentService {
 }
 
 message AgentEvent {
+    string event_id = 1;                    // Unique event identifier
+    google.protobuf.Timestamp timestamp = 2; // Event timestamp
     oneof event {
-        ThreadCreated thread_created = 1;
-        MessageAdded message_added = 2;
-        MessageStreaming message_streaming = 3;
-        ToolUseStarted tool_use_started = 4;
+        ThreadCreated thread_created = 10;
+        MessageAdded message_added = 11;
+        MessageStreaming message_streaming = 12;
+        ToolUseStarted tool_use_started = 13;
         // ... other event types
     }
 }
+
+message SubscribeRequest {
+    optional string thread_id = 1;           // Subscribe to specific thread or all
+    optional string last_event_id = 2;       // Resume from specific event
+    optional google.protobuf.Timestamp since_timestamp = 3; // Get events since timestamp
+}
 ```
 
-#### 2.2 Subscription Management
+#### 2.2 Event-Based State Synchronization
+
+The architecture uses a unified event stream for both real-time updates and state synchronization:
+
+**Sync Mechanism:**
+- Each event has a unique ID and timestamp
+- Clients track their last received event ID/timestamp
+- On (re)connection, clients can request events since their last sync point
+- The same event stream infrastructure handles both real-time and catch-up events
+
+**Benefits:**
+- No separate state sync protocol needed
+- Guaranteed consistency through event replay
+- Handles disconnections gracefully
+- Simple client implementation
+
+**Implementation:**
+```rust
+// Client tracks last event
+struct SyncState {
+    last_event_id: Option<String>,
+    last_timestamp: Option<Timestamp>,
+}
+
+// On reconnection
+let subscribe_request = SubscribeRequest {
+    thread_id: None,  // All threads
+    last_event_id: sync_state.last_event_id,
+    since_timestamp: sync_state.last_timestamp,
+};
+
+// Server replays missed events, then streams new ones
+```
+
+#### 2.3 Subscription Management
 - Per-user event streams
 - Thread-specific subscriptions
 - Automatic cleanup on disconnect
 - Event filtering and rate limiting
+- Event replay for state synchronization
 
 ### 3. Desktop Integration
 
@@ -200,7 +243,12 @@ Mobile Command → Collab Server → Desktop → Agent Execution → Event Strea
 
 ### 3. History Synchronization
 ```
-Mobile Request → Collab Server → Desktop Query → Response → Mobile Update
+Mobile Request (with last_event_id) → Collab Server → Event Replay → Mobile Update
+```
+
+### 4. Initial State Sync
+```
+Mobile Connect → Subscribe with last_event_id → Server Replays Events → Real-time Stream
 ```
 
 ## Security Architecture
