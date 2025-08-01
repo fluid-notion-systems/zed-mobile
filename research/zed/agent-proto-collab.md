@@ -1,5 +1,24 @@
 # Agent Proto/Collab Architecture Gameplan
 
+## Roadmap
+
+- [x] **Phase 1**: Proto definitions and conversions (DONE - commit 264c3d93f4)
+- [x] **Phase 2**: ThreadStore client integration (COMPLETED)
+  - [x] Simple event forwarding without batching
+  - [x] Basic proto conversions
+  - [x] **Client connection management**
+- [ ] **Phase 3**: Collab server handlers (CURRENT)
+  - [ ] **Subscription management** ← **WE ARE HERE**
+  - [ ] Event broadcasting
+  - [ ] Security validation
+- [ ] **Phase 4**: Mobile client implementation
+  - [ ] Event stream handling
+  - [ ] UI integration
+- [ ] **Phase 5**: Performance optimization
+  - [ ] Event batching for streaming text
+  - [ ] Connection pooling optimizations
+  - [ ] Caching and rate limiting
+
 ## Overview
 
 This document outlines the architecture and implementation plan for integrating agent functionality into Zed's collaboration system, enabling real-time agent event streaming to mobile clients. Based on the patterns established by `UpdateChannels` and the proto definitions from commit 264c3d93f4.
@@ -64,14 +83,14 @@ pub struct ThreadStore {
 impl ThreadStore {
     pub fn initialize_with_client(&mut self, client: Arc<Client>, cx: &mut Context<Self>) {
         self.client = Some(client.clone());
-        
+
         // Register for incoming notifications
         client.add_message_handler(cx.weak_entity(), Self::handle_agent_event_notification);
     }
-    
+
     pub fn create_thread(&mut self, cx: &mut Context<Self>) -> Entity<Thread> {
         let thread = /* ... existing creation logic ... */;
-        
+
         // Subscribe to thread events
         if self.client.is_some() {
             let subscription = cx.subscribe(&thread, |store, thread, event, cx| {
@@ -79,10 +98,10 @@ impl ThreadStore {
             });
             self.thread_subscriptions.insert(thread.read(cx).id(), subscription);
         }
-        
+
         thread
     }
-    
+
     fn on_thread_event(&mut self, thread: Entity<Thread>, event: &ThreadEvent, cx: &mut Context<Self>) {
         if let Some(client) = &self.client {
             // Convert and send event
@@ -100,12 +119,12 @@ impl ThreadStore {
         // Batching optimization will be added in Phase 5
         self.send_event_immediate(thread_id, event, cx);
     }
-    
+
     fn send_event_immediate(&mut self, thread_id: ThreadId, event: &ThreadEvent, cx: &mut Context<Self>) {
         if let Some(client) = &self.client {
             // Convert ThreadEvent to proto
             let proto_event = proto::ThreadEvent::from(event);
-            
+
             let notification = proto::AgentEventNotification {
                 event: Some(proto::AgentEvent {
                     event_id: Uuid::new_v4().to_string(),
@@ -115,7 +134,7 @@ impl ThreadStore {
                     event: Some(proto_event),
                 }),
             };
-            
+
             // Send to server
             cx.background_executor().spawn(async move {
                 client.send(notification).log_err();
@@ -166,13 +185,13 @@ async fn handle_agent_event_notification(
 ) -> Result<()> {
     let event = notification.event.context("missing event")?;
     let thread_id = ThreadId::from_proto(event.thread_id.context("missing thread_id")?);
-    
+
     // Verify ownership
     let db = session.db().await;
     if !db.user_owns_thread(session.user_id(), thread_id).await? {
         return Err(anyhow!("unauthorized"));
     }
-    
+
     // Broadcast to subscribed connections
     let connection_pool = session.connection_pool().await;
     for (conn_id, subscription) in &session.agent_subscriptions {
@@ -180,7 +199,7 @@ async fn handle_agent_event_notification(
             session.peer.send(*conn_id, notification.clone())?;
         }
     }
-    
+
     Ok(())
 }
 ```
@@ -191,19 +210,19 @@ async fn handle_agent_event_notification(
 ```dart
 class AgentEventService {
   StreamController<AgentEvent> _eventStream;
-  
+
   Future<void> subscribeToThread(ThreadId threadId) async {
     final request = SubscribeToAgentEvents()
       ..threadId = threadId
       ..sinceTimestamp = _lastEventTimestamp;
-      
+
     final response = await _rpcClient.request(request);
-    
+
     // Process any recent events
     for (final event in response.recentEvents) {
       _eventStream.add(event);
     }
-    
+
     // Listen for new events
     _rpcClient.notifications
         .where((msg) => msg is AgentEventNotification)
@@ -293,25 +312,6 @@ impl StreamingBuffer {
 - High-frequency streaming
 - Large thread counts
 - Network interruption recovery
-
-## Migration Path
-
-1. **Phase 1**: Proto definitions and conversions (DONE - commit 264c3d93f4)
-2. **Phase 2**: ThreadStore client integration (CURRENT)
-   - Simple event forwarding without batching
-   - Basic proto conversions
-   - Client connection management
-3. **Phase 3**: Collab server handlers
-   - Subscription management
-   - Event broadcasting
-   - Security validation
-4. **Phase 4**: Mobile client implementation
-   - Event stream handling
-   - UI integration
-5. **Phase 5**: Performance optimization
-   - Event batching for streaming text
-   - Connection pooling optimizations
-   - Caching and rate limiting
 
 ## Success Metrics
 
