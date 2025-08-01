@@ -31,16 +31,16 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 - [x] Consolidate redundant documentation
 - [x] Update architecture for collab server approach
 
-## 🚧 Phase 2: Collab Server Integration (Current - 4 weeks)
+## 🚧 Phase 2: Collab Server Integration (Current)
 
-### Protocol Definition (Week 1)
+### Stage 1: Protocol Definition
 - [ ] Create proto/agent.proto with agent-specific messages
 - [ ] Define AgentEvent protobuf messages
 - [ ] Define RPC service methods (Subscribe, GetThreads, etc.)
 - [ ] Generate Rust code from proto definitions
 - [ ] Add proto conversion methods to zed-agent-core
 
-### Server Implementation (Week 2)
+### Stage 2: Server Implementation
 - [ ] Add agent subscription management to collab server
 - [ ] Implement event routing for agent events
 - [ ] Add authentication/authorization checks
@@ -48,7 +48,7 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 - [ ] Implement rate limiting for events
 - [ ] Add metrics and monitoring
 
-### Desktop Bridge (Week 3)
+### Stage 3: Desktop Bridge
 - [ ] Create AgentCollabBridge struct
 - [ ] Connect EventBus to collab client
 - [ ] Implement proto conversion for all event types
@@ -56,29 +56,29 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 - [ ] Test end-to-end event flow
 - [ ] Handle error cases and recovery
 
-### Testing & Validation (Week 4)
+### Stage 4: Testing & Validation
 - [ ] Unit tests for subscription management
 - [ ] Integration tests for event flow
 - [ ] Load tests for high-frequency events
 - [ ] Security tests for data isolation
 - [ ] Performance benchmarking
 
-## 📱 Phase 3: Mobile MVP - Flutter (6 weeks)
+## 📱 Phase 3: Mobile MVP - Flutter
 
-### Week 1: Flutter UI Foundation
-- [ ] Project setup with dependencies
-- [ ] Basic navigation structure
-- [ ] Core UI components
+### Stage 1: Flutter UI Foundation
+- [x] Project setup with dependencies
+- [x] Basic navigation structure
+- [x] Core UI components
 - [ ] Riverpod providers setup
 - [ ] AgentState management
 
-### Week 2: Essential Screens
-- [ ] SplashScreen (connection status)
-- [ ] AgentPanel (main interface)
-- [ ] ThreadHistory
+### Stage 2: Essential Screens
+- [x] SplashScreen (connection status)
+- [x] AgentPanel (main interface)
+- [x] ThreadHistory
 - [ ] Settings
 
-### Week 3: UI Components
+### Stage 3: UI Components
 - [ ] MessageBubble widget
 - [ ] ThreadHeader widget
 - [ ] MessageInput widget
@@ -86,14 +86,14 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 - [ ] LoadingStates
 - [ ] ErrorHandling
 
-### Week 4: Collab Client Integration
+### Stage 4: Collab Client Integration
 - [ ] Implement collab client connection
 - [ ] WebSocket management
 - [ ] Proto message handling
 - [ ] Event stream processing
 - [ ] Authentication flow
 
-### Week 5: Core Features
+### Stage 5: Core Features
 - [ ] Real-time message streaming
 - [ ] Thread navigation
 - [ ] Command input interface
@@ -101,92 +101,92 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 - [ ] Message caching
 - [ ] Offline support structure
 
-### Week 6: Connection Management
+### Stage 6: Connection Management
 - [ ] Implement reconnection logic
 - [ ] Add offline command queue
 - [ ] Build sync state management
 - [ ] Handle network transitions
 - [ ] Add connection status UI
 
-## 🎨 Phase 4: Polish & iOS Native (4 weeks)
+## 🎨 Phase 4: Polish & iOS Native
 
-### iOS Native Client
+### Stage 1: iOS Native Client
 - [ ] SwiftUI implementation
 - [ ] Native collab client
 - [ ] Platform-specific features
 - [ ] Accessibility support
 - [ ] Dark mode support
 
-### UI/UX Refinement
+### Stage 2: UI/UX Refinement
 - [ ] Animations and transitions
 - [ ] Gesture support
 - [ ] Haptic feedback
 - [ ] Error states
 - [ ] Empty states
 
-### Performance Optimization
+### Stage 3: Performance Optimization
 - [ ] Memory profiling
 - [ ] Battery optimization
 - [ ] Network efficiency
 - [ ] UI performance
 - [ ] Caching strategies
 
-### Beta Testing
+### Stage 4: Beta Testing
 - [ ] TestFlight setup
 - [ ] Crash reporting
 - [ ] Analytics integration
 - [ ] User feedback collection
 
-## 🤖 Phase 5: Android & Cross-Platform (3 weeks)
+## 🤖 Phase 5: Android & Cross-Platform
 
-### Android Client
+### Stage 1: Android Client
 - [ ] Kotlin/Compose implementation
 - [ ] Material 3 design
 - [ ] Platform-specific features
 - [ ] Play Store preparation
 
-### Cross-Platform Features
+### Stage 2: Cross-Platform Features
 - [ ] Ensure feature parity
 - [ ] Shared business logic
 - [ ] Consistent UX
 - [ ] Platform testing
 
-## 🚀 Phase 6: Advanced Features (4 weeks)
+## 🚀 Phase 6: Advanced Features
 
-### Voice Input
+### Stage 1: Voice Input
 - [ ] Platform-specific voice APIs
 - [ ] Voice command parsing
 - [ ] "Hey Zed" wake word
 - [ ] Continuous dictation
 
-### Rich Content
+### Stage 2: Rich Content
 - [ ] Markdown rendering
 - [ ] Syntax highlighting
 - [ ] Image support
 - [ ] File preview
 - [ ] Diff visualization
 
-### Enhanced Tool Integration
+### Stage 3: Enhanced Tool Integration
 - [ ] Tool call UI refinement
 - [ ] File tree browser
 - [ ] Context picker
 - [ ] Tool status tracking
 
-### Multi-Device Support
+### Stage 4: Multi-Device Support
 - [ ] Cross-device state sync
 - [ ] Handoff between devices
 - [ ] Shared session support
 - [ ] Conflict resolution
 
-### Notifications
+### Stage 5: Notifications
 - [ ] Push notification setup
 - [ ] Smart notification filtering
 - [ ] Background sync
 - [ ] Notification actions
 
-## 🌐 Phase 7: Web Client (3 weeks)
+## 🌐 Phase 7: Web Client
 
-### Web Implementation
+### Stage 1: Web Implementation
 - [ ] Create web client project
 - [ ] Implement WebSocket connection
 - [ ] Build responsive UI
@@ -280,19 +280,19 @@ This roadmap tracks the implementation progress of Zed Mobile, focusing on agent
 
 ## 🔮 Future Roadmap (Post-Launch)
 
-### Version 1.1 (Month 2)
+### Version 1.1
 - Terminal panel integration
 - iPad/tablet optimization
 - Additional language models
 - Workspace sync
 
-### Version 1.2 (Month 3)
+### Version 1.2
 - Diagnostics panel
 - Search results panel
 - Team collaboration
 - Analytics dashboard
 
-### Version 2.0 (Month 6)
+### Version 2.0
 - Full Zed integration
 - Remote development
 - Plugin ecosystem
