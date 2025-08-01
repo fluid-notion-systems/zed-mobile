@@ -2,411 +2,355 @@
 
 ## Overview
 
-Zed Mobile is designed as a companion application that provides mobile access to Zed editor's runtime information, with initial focus on the agentic panel. The architecture prioritizes real-time communication, extensibility, and a clean separation between the mobile client and Zed editor.
+Zed Mobile is designed as a companion application that provides mobile access to Zed editor's agent functionality through the existing collaboration server infrastructure. The architecture leverages Zed's collab server for all communication, ensuring a unified, efficient, and secure connection model.
 
 ## High-Level Architecture
 
 ```mermaid
 graph TB
-    subgraph "Mobile Device"
-        MA[Mobile App]
-        VR[Voice Recognition]
-        LS[Local Storage]
-        PN[Push Notifications]
+    subgraph "Mobile Clients"
+        iOS[iOS App]
+        Android[Android App]
+        Web[Web Client]
     end
 
-    subgraph "Communication Layer"
-        WS[WebSocket Server]
-        REST[REST API]
-        GRPC[gRPC Service]
+    subgraph "Collab Server"
+        CS[Collab Service]
+        AUTH[Authentication]
+        SUB[Subscription Manager]
+        ROUTE[Event Router]
     end
 
-    subgraph "Zed Editor"
-        ZE[Zed Extension]
+    subgraph "Zed Desktop"
+        ZE[Zed Editor]
+        AC[zed-agent-core]
+        AB[Agent Bridge]
         AP[Agent Panel]
-        RT[Runtime Monitor]
         EB[Event Bus]
     end
 
-    MA <--> WS
-    MA <--> REST
-    MA <--> GRPC
-    WS <--> ZE
-    REST <--> ZE
-    GRPC <--> ZE
-    ZE <--> AP
-    ZE <--> RT
-    ZE <--> EB
-    VR --> MA
-    MA <--> LS
-    PN <--> MA
+    subgraph "AI Providers"
+        GPT[OpenAI/Anthropic]
+        LOCAL[Local Models]
+    end
+
+    iOS <--> CS
+    Android <--> CS
+    Web <--> CS
+    
+    CS <--> ZE
+    ZE <--> AC
+    AC <--> AB
+    AB <--> AP
+    AC <--> EB
+    
+    ZE <--> GPT
+    ZE <--> LOCAL
 ```
 
 ## Core Components
 
-### 1. Mobile Application Layer
+### 1. zed-agent-core Crate
 
-#### 1.1 Flutter Implementation (Option A)
-```dart
-// Core architecture using Clean Architecture pattern
-lib/
-├── domain/           # Business logic and entities
-│   ├── entities/
-│   ├── repositories/
-│   └── usecases/
-├── data/            # Data layer implementation
-│   ├── datasources/
-│   ├── models/
-│   └── repositories/
-├── presentation/    # UI layer
-│   ├── screens/
-│   ├── widgets/
-│   └── providers/
-└── core/           # Shared utilities
-    ├── errors/
-    ├── network/
-    └── utils/
-```
-
-#### 1.2 Kotlin Multiplatform Implementation (Option B)
-```kotlin
-// Shared module structure
-shared/
-├── commonMain/     # Common business logic
-├── androidMain/    # Android-specific implementations
-├── iosMain/       # iOS-specific implementations
-└── commonTest/    # Shared tests
-
-// Platform-specific apps
-androidApp/        # Android UI (Jetpack Compose)
-iosApp/           # iOS UI (SwiftUI)
-```
-
-### 2. Communication Protocol
-
-#### 2.1 WebSocket Protocol
-```typescript
-// Message types for real-time communication
-interface WebSocketMessage {
-  type: MessageType;
-  sessionId: string;
-  timestamp: number;
-  payload: MessagePayload;
-}
-
-enum MessageType {
-  AGENT_OUTPUT = "agent_output",
-  TOOL_CALL = "tool_call",
-  USER_INPUT = "user_input",
-  SYSTEM_EVENT = "system_event",
-  HEARTBEAT = "heartbeat"
-}
-
-interface AgentOutput {
-  content: string;
-  metadata: {
-    model: string;
-    tokens: number;
-    latency: number;
-  };
-}
-```
-
-#### 2.2 gRPC Service Definition
-```protobuf
-syntax = "proto3";
-
-package zedmobile;
-
-service AgentPanelService {
-  // Bidirectional streaming for real-time updates
-  rpc StreamPanelUpdates(stream PanelRequest) returns (stream PanelUpdate);
-
-  // Unary calls for specific operations
-  rpc SendCommand(CommandRequest) returns (CommandResponse);
-  rpc GetSessionHistory(SessionHistoryRequest) returns (SessionHistoryResponse);
-  rpc GetAgentStatus(Empty) returns (AgentStatus);
-}
-
-message PanelUpdate {
-  string session_id = 1;
-  UpdateType type = 2;
-  google.protobuf.Timestamp timestamp = 3;
-
-  oneof content {
-    UserMessage user_message = 4;
-    AssistantMessage assistant_message = 5;
-    ToolCall tool_call = 6;
-    SystemNotification notification = 7;
-  }
-}
-
-message ToolCall {
-  string id = 1;
-  string name = 2;
-  map<string, google.protobuf.Value> parameters = 3;
-  ToolCallStatus status = 4;
-  repeated Diff diffs = 5;
-}
-```
-
-### 3. Zed Extension Architecture
+The foundational data model and event system, providing:
 
 ```rust
-// Extension structure
-extension/
-├── src/
-│   ├── lib.rs              // Extension entry point
-│   ├── server.rs           // WebSocket/gRPC server
-│   ├── panel_monitor.rs    // Agent panel monitoring
-│   ├── event_stream.rs     // Event streaming logic
-│   └── protocol/           // Protocol definitions
-│       ├── mod.rs
-│       └── messages.rs
-├── Cargo.toml
-└── extension.json
-
-// Core monitoring trait
-pub trait PanelMonitor: Send + Sync {
-    fn subscribe_to_updates(&self) -> BoxStream<'static, PanelUpdate>;
-    fn send_command(&self, command: Command) -> BoxFuture<'static, Result<Response>>;
-    fn get_session_state(&self) -> SessionState;
+// Core types without GPUI dependencies
+pub struct Thread {
+    pub id: String,
+    pub title: Option<String>,
+    pub messages: Vec<Message>,
+    pub status: ThreadStatus,
+    pub token_usage: TokenUsage,
 }
 
-// Event streaming implementation
-pub struct AgentPanelMonitor {
-    panel: Arc<RwLock<AgentPanel>>,
-    event_tx: broadcast::Sender<PanelEvent>,
+pub struct EventBus {
+    // Distributes events to multiple subscribers
 }
 
-impl AgentPanelMonitor {
-    pub fn new(panel: Entity<AgentPanel>) -> Self {
-        let (tx, _) = broadcast::channel(1024);
-        // Setup panel observation
-        Self {
-            panel: Arc::new(RwLock::new(panel)),
-            event_tx: tx,
-        }
+pub enum AgentEvent {
+    ThreadCreated(Thread),
+    MessageAdded { thread_id: String, message: Message },
+    MessageStreaming { content: String, segment_id: String },
+    ToolUseStarted { tool_name: String, input: Value },
+    // ... other events
+}
+```
+
+**Key Design Decisions:**
+- No GPUI dependencies for maximum reusability
+- Event-driven architecture for loose coupling
+- Serialization-friendly data structures
+- Thread-safe event distribution
+
+### 2. Collab Server Integration
+
+The collab server acts as the central hub for all agent-related communication:
+
+#### 2.1 Protocol Extensions
+```protobuf
+service AgentService {
+    // Subscribe to agent events (real-time)
+    rpc SubscribeToAgentEvents(SubscribeRequest) returns (stream AgentEvent);
+    
+    // Get historical data
+    rpc GetThreads(GetThreadsRequest) returns (ThreadList);
+    rpc GetThread(GetThreadRequest) returns (Thread);
+    
+    // Send commands from mobile
+    rpc SendAgentCommand(AgentCommand) returns (CommandResponse);
+}
+
+message AgentEvent {
+    oneof event {
+        ThreadCreated thread_created = 1;
+        MessageAdded message_added = 2;
+        MessageStreaming message_streaming = 3;
+        ToolUseStarted tool_use_started = 4;
+        // ... other event types
     }
 }
 ```
 
-## Data Flow
+#### 2.2 Subscription Management
+- Per-user event streams
+- Thread-specific subscriptions
+- Automatic cleanup on disconnect
+- Event filtering and rate limiting
 
-### 1. Real-time Updates Flow
-```
-1. Agent Panel Event (Zed)
-   ↓
-2. Extension Event Handler
-   ↓
-3. Protocol Serialization
-   ↓
-4. WebSocket/gRPC Transmission
-   ↓
-5. Mobile App Reception
-   ↓
-6. State Update (Redux/Riverpod)
-   ↓
-7. UI Rendering
-```
+### 3. Desktop Integration
 
-### 2. Command Execution Flow
-```
-1. User Input (Voice/Text)
-   ↓
-2. Input Processing
-   ↓
-3. Command Construction
-   ↓
-4. Network Transmission
-   ↓
-5. Extension Command Handler
-   ↓
-6. Zed API Invocation
-   ↓
-7. Response Processing
-   ↓
-8. Mobile App Update
+#### 3.1 Agent Bridge
+Connects the local agent system to the collab server:
+
+```rust
+pub struct AgentCollabBridge {
+    client: Arc<Client>,           // Collab client
+    event_bus: Model<EventBus>,    // From zed-agent-core
+    active_subscriptions: HashSet<String>,
+}
 ```
 
-## State Management
+**Responsibilities:**
+- Convert core events to proto format
+- Send events through collab connection
+- Handle subscription lifecycle
+- Manage reconnection state
 
-### Mobile App State
+#### 3.2 Event Flow
+```
+1. User interacts with Agent Panel
+2. GPUI event generated
+3. EventBridge converts to core event
+4. EventBus distributes to subscribers
+5. AgentCollabBridge receives event
+6. Converts to proto and sends via collab
+7. Collab server routes to subscribers
+8. Mobile clients receive and render
+```
+
+### 4. Mobile Architecture
+
+#### 4.1 Client Structure
+```
+mobile/
+├── shared/              # Shared business logic
+│   ├── domain/         # Core entities
+│   ├── repositories/   # Data access
+│   └── services/       # Business services
+├── ios/                # iOS-specific code
+├── android/            # Android-specific code
+└── web/               # Web client code
+```
+
+#### 4.2 Connection Management
+- Single persistent connection to collab server
+- Automatic reconnection with exponential backoff
+- State synchronization on reconnect
+- Offline queue for commands
+
+#### 4.3 State Management
 ```typescript
 interface AppState {
-  connection: ConnectionState;
-  sessions: Map<string, Session>;
-  activeSession: string | null;
-  user: UserPreferences;
-  cache: CacheState;
-}
-
-interface Session {
-  id: string;
-  entries: AgentThreadEntry[];
-  status: SessionStatus;
-  metadata: SessionMetadata;
+    connection: ConnectionState;
+    threads: Map<string, Thread>;
+    activeThread: string | null;
+    pendingCommands: Command[];
+    syncStatus: SyncStatus;
 }
 
 interface ConnectionState {
-  status: 'connected' | 'disconnected' | 'reconnecting';
-  latency: number;
-  lastHeartbeat: number;
+    status: 'connected' | 'disconnected' | 'reconnecting';
+    lastSync: Date;
+    reconnectAttempts: number;
 }
 ```
 
-### Synchronization Strategy
-1. **Optimistic Updates**: Apply UI changes immediately, reconcile with server
-2. **Event Sourcing**: Store all events for replay and debugging
-3. **Offline Support**: Queue commands when disconnected
-4. **Conflict Resolution**: Last-write-wins with version vectors
+## Data Flow Patterns
 
-## Security Considerations
-
-### 1. Authentication & Authorization
-```yaml
-authentication:
-  methods:
-    - api_key       # Simple API key authentication
-    - oauth2        # OAuth 2.0 for production
-    - device_cert   # Certificate-based for enterprise
-
-authorization:
-  roles:
-    - viewer        # Read-only access
-    - operator      # Can send commands
-    - admin         # Full control
+### 1. Real-time Event Streaming
+```
+Desktop Agent Action → Core Event → Collab Proto → Server → Mobile Clients
 ```
 
-### 2. Encryption
-- **Transport**: TLS 1.3 for all network communication
-- **Storage**: AES-256 for local data encryption
-- **Keys**: Secure key storage using platform KeyStore/Keychain
+### 2. Command Execution
+```
+Mobile Command → Collab Server → Desktop → Agent Execution → Event Stream
+```
+
+### 3. History Synchronization
+```
+Mobile Request → Collab Server → Desktop Query → Response → Mobile Update
+```
+
+## Security Architecture
+
+### 1. Authentication
+- Leverages existing Zed authentication
+- JWT tokens for session management
+- Device-specific credentials
+
+### 2. Authorization
+- User can only access their own agent data
+- Thread-level permissions
+- Rate limiting per user
 
 ### 3. Data Privacy
-- No telemetry without explicit consent
-- Local-first data storage
-- Configurable data retention policies
-- GDPR compliance for EU users
+- End-to-end encryption for sensitive data
+- No agent conversation storage on collab server
+- TLS 1.3 for all connections
 
-## Performance Optimization
+## Performance Considerations
 
-### 1. Mobile Optimizations
-- **Lazy Loading**: Load session history on demand
-- **Pagination**: Limit message batch sizes
-- **Compression**: gzip/brotli for large payloads
-- **Caching**: Strategic caching of frequently accessed data
+### 1. Event Batching
+- Configurable batch intervals (default: 50ms)
+- Maximum batch size limits
+- Priority-based event ordering
 
-### 2. Network Efficiency
-```rust
-// Batching and throttling
-pub struct MessageBatcher {
-    buffer: Vec<PanelUpdate>,
-    max_batch_size: usize,
-    flush_interval: Duration,
-}
+### 2. Mobile Optimizations
+- Delta synchronization for large threads
+- Lazy loading of historical messages
+- Intelligent prefetching based on usage patterns
 
-impl MessageBatcher {
-    pub fn add(&mut self, update: PanelUpdate) {
-        self.buffer.push(update);
-        if self.buffer.len() >= self.max_batch_size {
-            self.flush();
-        }
-    }
-}
-```
+### 3. Network Efficiency
+- Protocol buffer serialization
+- Optional compression for large payloads
+- Connection multiplexing through collab
 
-### 3. Resource Management
-- Connection pooling for multiple Zed instances
-- Automatic reconnection with exponential backoff
-- Memory-aware caching with LRU eviction
-- Battery-conscious update frequencies
+## Scalability Design
 
-## Scalability Considerations
+### 1. Collab Server Scaling
+- Stateless event routing
+- Horizontal scaling with sticky sessions
+- Redis/NATS for cross-instance communication
 
-### 1. Multi-Instance Support
-```yaml
-instances:
-  discovery:
-    - mdns          # Local network discovery
-    - manual        # Manual IP configuration
-    - cloud_broker  # Cloud-based instance registry
+### 2. Client Scaling
+- Progressive loading strategies
+- Memory-aware caching
+- Background sync for large datasets
 
-  routing:
-    strategy: round_robin
-    failover: automatic
-    health_check_interval: 30s
-```
+## Error Handling & Recovery
 
-### 2. Horizontal Scaling
-- Stateless extension design
-- Redis/NATS for pub/sub across instances
-- Load balancing at connection level
+### 1. Connection Failures
+- Automatic reconnection with backoff
+- Queue commands during disconnection
+- Sync state on reconnection
 
-## Testing Strategy
+### 2. Data Consistency
+- Event ordering guarantees
+- Idempotent command design
+- Conflict resolution strategies
 
-### 1. Unit Testing
-- Business logic isolation
-- Mock network layers
-- Protocol compliance tests
+## Future Extensibility
 
-### 2. Integration Testing
-- End-to-end message flow
-- Network failure scenarios
-- Performance benchmarks
+### 1. Additional Panels
+The architecture supports adding other Zed panels:
+- Terminal output streaming
+- Diagnostic panel integration
+- Search results synchronization
 
-### 3. UI Testing
-- Widget testing (Flutter)
-- UI testing (Kotlin)
-- Accessibility compliance
+### 2. Multi-Device Sync
+- Sync agent state across devices
+- Handoff between desktop and mobile
+- Collaborative agent sessions
 
-## Deployment Architecture
+### 3. Cloud Features
+- Cloud-based agent execution
+- Shared team workspaces
+- Agent conversation history
 
-### 1. Mobile App Distribution
-- **iOS**: App Store with TestFlight beta
-- **Android**: Google Play with staged rollout
-- **Enterprise**: MDM distribution
+## Technology Stack
 
-### 2. Extension Distribution
-- Zed extension marketplace
-- GitHub releases for development
-- Private registry for enterprise
+### Desktop (Zed)
+- **Language**: Rust
+- **UI**: GPUI
+- **Networking**: Existing collab client
+- **Serialization**: Protocol Buffers
 
-## Future Considerations
+### Collab Server
+- **Language**: Rust
+- **Protocol**: gRPC/Protocol Buffers
+- **Database**: PostgreSQL
+- **Caching**: Redis
 
-### 1. Extended Panel Support
-- Terminal panel integration
-- Diagnostics panel
-- Search results panel
-- Custom panel API
+### Mobile Clients
+- **iOS**: Swift/SwiftUI
+- **Android**: Kotlin/Compose
+- **Shared Logic**: Rust (via FFI) or Kotlin Multiplatform
+- **State**: SwiftUI/Compose native state
 
-### 2. Collaboration Features
-- Multi-user sessions
-- Screen sharing capabilities
-- Collaborative debugging
+## Key Design Principles
 
-### 3. AI Enhancement
-- On-device ML for command prediction
-- Smart notifications
-- Usage pattern analysis
+### 1. Leverage Existing Infrastructure
+- Use collab server instead of new systems
+- Reuse authentication and connection management
+- Build on proven patterns
 
-## Technology Decisions
+### 2. Event-Driven Architecture
+- Loose coupling between components
+- Real-time updates as first-class citizen
+- Extensible event system
 
-### Why WebSocket + gRPC?
-- WebSocket for real-time bidirectional streaming
-- gRPC for structured RPC calls
-- Fallback to REST for compatibility
-
-### Why Protocol Buffers?
-- Language-agnostic serialization
-- Efficient binary format
-- Strong typing and versioning
-
-### Why Event Sourcing?
-- Complete audit trail
-- Easy debugging and replay
+### 3. Mobile-First Considerations
+- Battery efficiency through single connection
+- Bandwidth awareness
 - Offline resilience
+
+### 4. Security by Design
+- Zero-trust architecture
+- Minimal data exposure
+- Strong authentication
+
+## Implementation Phases
+
+### Phase 1: Foundation
+- Proto definitions
+- Basic event routing
+- Desktop integration
+
+### Phase 2: Mobile MVP
+- iOS client with basic agent panel
+- Real-time event streaming
+- Command execution
+
+### Phase 3: Enhancement
+- Android client
+- Advanced features
+- Performance optimization
+
+### Phase 4: Scale
+- Multi-device sync
+- Team collaboration
+- Cloud features
 
 ## Conclusion
 
-This architecture provides a solid foundation for building a responsive, scalable mobile companion to Zed. The modular design allows for incremental development while maintaining flexibility for future enhancements.
+This architecture provides a robust foundation for mobile agent access while leveraging Zed's existing infrastructure. The design prioritizes:
+
+1. **Simplicity**: Single connection model through collab server
+2. **Performance**: Efficient event streaming and batching
+3. **Security**: Leveraging existing auth with strong isolation
+4. **Extensibility**: Easy to add new panels and features
+5. **Reliability**: Proven patterns with proper error handling
+
+The phased approach allows incremental delivery while maintaining architectural integrity throughout the development process.

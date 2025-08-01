@@ -1,660 +1,303 @@
-# Implementation Plan: PODO Extraction and Zed Core Integration
+# Implementation Plan: Agent Events via Collab Server
 
 ## Overview
 
-This document outlines the implementation plan for extracting Plain Old Data Objects from Zed's agent implementation and updating Zed itself to use these core types directly. This creates a single source of truth for agent data structures that can be shared between Zed and the mobile app.
+This implementation plan outlines how to integrate Zed's agent system with the collaboration server to enable real-time agent event streaming to mobile and other clients. This approach leverages existing infrastructure rather than creating a separate WebSocket bridge.
 
-## Why This Approach is Better
+## Current Status
 
-### Advantages
-1. **Single Source of Truth**: One set of data structures used everywhere
-2. **No API Extensions Needed**: Avoids complexity of extending Zed's extension API
-3. **Better Type Safety**: Direct use of types in Zed ensures consistency
-4. **Easier Maintenance**: Changes to data structures automatically propagate
-5. **Performance**: No conversion overhead between internal and external types
-6. **Cleaner Architecture**: Separation of concerns between data and UI
+### ✅ Completed Items
 
-### Potential Challenges
-1. **Refactoring Effort**: Need to update existing agent code
-2. **GPUI Dependencies**: Must carefully extract without breaking existing functionality
-3. **Backward Compatibility**: Need to ensure existing features continue working
+1. **PODO Extraction (`zed-agent-core` crate)** - DONE
+   - Created standalone crate with core types
+   - Implemented Thread, Message, MessageSegment, AgentEvent
+   - Added EventBus for local event distribution
+   - No GPUI dependencies
 
-## 1. PODO Extraction - `zed-agent-core` Crate
+2. **Zed Agent Integration** - DONE
+   - Added `core_conversion.rs` for GPUI ↔ Core conversions
+   - Implemented `event_bridge.rs` to connect GPUI events to EventBus
+   - Agent now uses EventBus for event emission
 
-### 1.1 Create New Crate Structure
+3. **Event System** - DONE
+   - EventBus implemented in `zed-agent-core`
+   - EventBridge connects GPUI events to core events
+   - Conversion methods for all major event types
 
+### 🚧 Next Steps
+
+## 1. Collab Server Integration
+
+### 1.1 Proto Definitions
+
+Create `proto/agent.proto` with agent-specific messages:
+
+```protobuf
+message AgentThread {
+    string id = 1;
+    string title = 2;
+    repeated string message_ids = 3;
+    optional string profile_id = 4;
+    google.protobuf.Timestamp created_at = 5;
+    google.protobuf.Timestamp updated_at = 6;
+    ThreadStatus status = 7;
+    TokenUsage token_usage = 8;
+}
+
+message AgentEvent {
+    google.protobuf.Timestamp timestamp = 1;
+    string user_id = 2;
+    
+    oneof event {
+        ThreadCreated thread_created = 10;
+        ThreadUpdated thread_updated = 11;
+        MessageAdded message_added = 12;
+        MessageStreaming message_streaming = 13;
+        ToolUseStarted tool_use_started = 14;
+        ToolUseCompleted tool_use_completed = 15;
+    }
+}
+
+// RPC messages
+message SubscribeToAgentEvents {
+    optional string thread_id = 1;
+    bool include_history = 2;
+}
+
+message AgentEventNotification {
+    AgentEvent event = 1;
+}
 ```
-zed/crates/zed-agent-core/
-├── Cargo.toml
-├── src/
-│   ├── lib.rs
-│   ├── types/
-│   │   ├── mod.rs
-│   │   ├── thread.rs
-│   │   ├── message.rs
-│   │   ├── context.rs
-│   │   ├── tool.rs
-│   │   └── event.rs
-│   ├── conversion/
-│   │   ├── mod.rs
-│   │   ├── from_gpui.rs
-│   │   └── to_gpui.rs
-│   └── serialization/
-│       ├── mod.rs
-│       └── json.rs
-```
 
-### 1.2 Core Types to Extract
+### 1.2 Collab Server Extensions
+
+Add to `collab/src/rpc.rs`:
 
 ```rust
-// thread.rs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Thread {
-    pub id: ThreadId,
-    pub title: Option<String>,
-    pub messages: Vec<Message>,
-    pub profile_id: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub status: ThreadStatus,
-    pub token_usage: TokenUsage,
-}
-
-// message.rs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub id: MessageId,
-    pub thread_id: ThreadId,
-    pub role: Role,
-    pub segments: Vec<MessageSegment>,
-    pub timestamp: DateTime<Utc>,
-    pub status: MessageStatus,
-}
-
-// event.rs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
-pub enum AgentEvent {
-    ThreadCreated { thread: Thread },
-    ThreadUpdated { thread_id: ThreadId, changes: ThreadChanges },
-    MessageAdded { thread_id: ThreadId, message: Message },
-    MessageStreaming { message_id: MessageId, chunk: String },
-    ToolUseStarted { tool_use: ToolUse },
-    // ... etc
-}
-```
-
-### 1.3 Cargo.toml Dependencies
-
-```toml
-[package]
-name = "zed-agent-core"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.0", features = ["serde", "v4"] }
-
-[dev-dependencies]
-pretty_assertions = "1.4"
-```
-
-### 1.4 Conversion Implementation
-
-```rust
-// conversion/from_gpui.rs
-use crate::types::*;
-use agent::{Thread as GpuiThread, Message as GpuiMessage};
-
-impl From<&GpuiThread> for Thread {
-    fn from(gpui_thread: &GpuiThread) -> Self {
-        Thread {
-            id: ThreadId(gpui_thread.id().to_string()),
-            title: gpui_thread.summary().map(|s| s.text.clone()),
-            messages: gpui_thread.messages()
-                .iter()
-                .map(Message::from)
-                .collect(),
-            // ... etc
-        }
+impl Server {
+    pub fn new() -> Arc<Self> {
+        // ... existing handlers ...
+        
+        // Agent handlers
+        server
+            .add_request_handler(subscribe_to_agent_events)
+            .add_request_handler(unsubscribe_from_agent_events)
+            .add_request_handler(get_agent_threads)
+            .add_request_handler(get_agent_thread)
+            .add_message_handler(handle_agent_event_from_host)
     }
 }
 ```
 
-## 2. Extend Zed Extension API
+### 1.3 Agent Event Broadcasting
 
-### 2.1 Add Agent Capabilities to Extension API
+Create `collab/src/agent/subscriptions.rs`:
 
 ```rust
-// In extension_api/wit/since_v0.7.0/agent.wit
-interface agent {
-    record thread-summary {
-        id: string,
-        title: option<string>,
-        message-count: u32,
-        created-at: string,
-    }
-    
-    record agent-event {
-        event-type: string,
-        data: string, // JSON serialized
-    }
-    
-    /// Subscribe to agent events
-    subscribe-to-agent-events: func() -> result<stream<agent-event>>
-    
-    /// Get all threads
-    get-threads: func() -> result<list<thread-summary>>
-    
-    /// Get thread details
-    get-thread: func(thread-id: string) -> result<string> // JSON serialized Thread
+pub struct AgentSubscriptions {
+    global_subscribers: HashMap<UserId, HashSet<ConnectionId>>,
+    thread_subscribers: HashMap<String, HashSet<ConnectionId>>,
+    connection_threads: HashMap<ConnectionId, HashSet<String>>,
 }
 ```
 
-### 2.2 Implement Agent Host Proxy
+## 2. Implementation Phases
+
+### Phase 1: Proto & Infrastructure (Week 1) ⏳ CURRENT
+- [ ] Define proto messages for agent events
+- [ ] Generate Rust code from protos
+- [ ] Add RPC handler stubs
+- [ ] Set up subscription management structure
+
+### Phase 2: Server Integration (Week 2)
+- [ ] Implement agent subscription management
+- [ ] Add event routing logic
+- [ ] Handle connection lifecycle (cleanup on disconnect)
+- [ ] Add authentication/authorization checks
+
+### Phase 3: Desktop Client Integration (Week 3)
+- [ ] Create `AgentCollabBridge` to connect EventBus to collab
+- [ ] Convert core events to proto format
+- [ ] Send events through collab connection
+- [ ] Test end-to-end event flow
+
+### Phase 4: Mobile Client (Week 4)
+- [ ] Implement RPC client for agent events
+- [ ] Build subscription management
+- [ ] Create UI for agent panel
+- [ ] Handle reconnection logic
+
+## 3. Technical Details
+
+### 3.1 Event Flow Architecture
+
+```
+Zed Desktop (Agent Action)
+    ↓
+GPUI Event
+    ↓
+EventBridge (event_bridge.rs)
+    ↓
+zed-agent-core EventBus
+    ↓
+AgentCollabBridge (NEW)
+    ↓
+Proto Conversion
+    ↓
+Collab Server (RPC)
+    ↓
+Mobile Client
+```
+
+### 3.2 AgentCollabBridge Implementation
 
 ```rust
-// In extension_host/src/agent_proxy.rs
-pub trait ExtensionAgentProxy: Send + Sync + 'static {
-    fn subscribe_to_events(&self) -> mpsc::Receiver<AgentEvent>;
-    fn get_threads(&self) -> Vec<ThreadSummary>;
-    fn get_thread(&self, id: &ThreadId) -> Option<Thread>;
-}
-```
-
-### 2.3 Wire Up to Agent Store
-
-```rust
-// In agent/src/extension_bridge.rs
-use zed_agent_core::{Thread, AgentEvent};
-use extension::ExtensionAgentProxy;
-
-impl ExtensionAgentProxy for AgentExtensionBridge {
-    fn subscribe_to_events(&self) -> mpsc::Receiver<AgentEvent> {
-        let (tx, rx) = mpsc::channel(100);
-        
-        // Subscribe to ThreadStore events
-        self.thread_store.subscribe(move |event| {
-            let core_event = AgentEvent::from(event);
-            let _ = tx.try_send(core_event);
-        });
-        
-        rx
-    }
-}
-```
-
-## 3. Create Zed Mobile Bridge Extension
-
-### 3.1 Extension Structure
-
-```
-extensions/zed-mobile-bridge/
-├── Cargo.toml
-├── extension.toml
-├── src/
-│   ├── lib.rs
-│   ├── server.rs
-│   └── auth.rs
-```
-
-### 3.2 Extension Manifest
-
-```toml
-# extension.toml
-id = "zed-mobile-bridge"
-name = "Zed Mobile Bridge"
-version = "0.1.0"
-schema_version = 1
-authors = ["Fluid Notion Systems"]
-description = "Bridge for Zed Mobile app communication"
-repository = "https://github.com/fluid-notion-systems/zed-mobile"
-
-[capabilities]
-agent = true
-network = { ports = [8765] }
-```
-
-### 3.3 WebSocket Server Implementation
-
-```rust
-// src/server.rs
-use zed_extension_api::{self as zed, AgentEvent};
-use tokio::net::TcpListener;
-use tokio_tungstenite::accept_async;
-use futures_util::{StreamExt, SinkExt};
-
-struct MobileBridgeServer {
-    port: u16,
-    auth_token: String,
+pub struct AgentCollabBridge {
+    client: Arc<Client>,
+    event_bus: Model<EventBus>,
+    _subscription: Subscription,
 }
 
-impl MobileBridgeServer {
-    async fn start(&self) -> Result<()> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", self.port)).await?;
-        
-        while let Ok((stream, _)) = listener.accept().await {
-            tokio::spawn(self.handle_connection(stream));
-        }
-        
-        Ok(())
-    }
-    
-    async fn handle_connection(&self, stream: TcpStream) {
-        let ws_stream = accept_async(stream).await.unwrap();
-        let (mut ws_sender, mut ws_receiver) = ws_stream.split();
-        
-        // Subscribe to agent events
-        let mut event_stream = zed::subscribe_to_agent_events().unwrap();
-        
-        // Forward events to WebSocket
-        tokio::spawn(async move {
-            while let Some(event) = event_stream.next().await {
-                let json = serde_json::to_string(&event).unwrap();
-                ws_sender.send(Message::Text(json)).await.unwrap();
-            }
-        });
-        
-        // Handle incoming messages
-        while let Some(msg) = ws_receiver.next().await {
-            match msg {
-                Ok(Message::Text(text)) => {
-                    self.handle_request(&text, &mut ws_sender).await;
+impl AgentCollabBridge {
+    pub fn new(client: Arc<Client>, event_bus: Model<EventBus>, cx: &mut Context) -> Self {
+        let subscription = event_bus.subscribe("collab_bridge", {
+            let client = client.clone();
+            move |event| {
+                if let Some(proto_event) = event.to_proto() {
+                    client.send(proto_event).trace_err();
                 }
-                _ => break,
             }
-        }
-    }
-}
-```
-
-### 3.4 Extension Entry Point
-
-```rust
-// src/lib.rs
-use zed_extension_api::{self as zed, Extension};
-
-struct ZedMobileBridge {
-    server: Option<MobileBridgeServer>,
-}
-
-impl Extension for ZedMobileBridge {
-    fn new() -> Self {
-        Self { server: None }
-    }
-    
-    fn activate(&mut self) {
-        // Start WebSocket server
-        let server = MobileBridgeServer::new(8765);
-        tokio::spawn(server.start());
-        self.server = Some(server);
-    }
-}
-
-zed::register_extension!(ZedMobileBridge);
-```
-
-## 4. Implementation Steps
-
-### Phase 1: PODO Extraction (Week 1)
-1. [ ] Create `zed-agent-core` crate in `zed/crates/`
-2. [ ] Define all PODO types without GPUI dependencies
-3. [ ] Implement serde serialization/deserialization
-4. [ ] Add builder patterns for complex types
-5. [ ] Write comprehensive unit tests
-
-### Phase 2: Update Zed Agent to Use PODOs (Week 2)
-1. [ ] Add `zed-agent-core` as dependency to `agent` crate
-2. [ ] Replace internal types with PODO types where possible
-3. [ ] Implement conversion layer for GPUI-specific parts
-4. [ ] Update thread store to emit PODO events
-5. [ ] Ensure all tests still pass
-
-### Phase 3: Event System Implementation (Week 3)
-1. [ ] Investigate Zed's existing event systems (GPUI observers, subscriptions)
-2. [ ] Extract reusable event primitives to `zed-agent-core` if possible
-3. [ ] Add event bus to `zed-agent-core` (potentially based on existing patterns)
-4. [ ] Wire up event emission in agent operations
-5. [ ] Create event aggregation for efficient updates
-6. [ ] Add event filtering and subscription management
-7. [ ] Test event flow end-to-end
-
-### Phase 4: Network Bridge Development (Week 4)
-1. [ ] Add WebSocket server to Zed (behind feature flag)
-2. [ ] Implement authentication mechanism
-3. [ ] Create JSON-RPC or similar protocol
-4. [ ] Handle connection lifecycle
-5. [ ] Test with Flutter client
-
-## 5. Detailed Implementation Plan
-
-### 5.1 Phase 1 Details: PODO Extraction
-
-#### Create Core Types
-```rust
-// zed/crates/zed-agent-core/src/types/thread.rs
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Thread {
-    pub id: ThreadId,
-    pub title: Option<String>,
-    pub messages: Vec<Message>,
-    pub profile_id: ProfileId,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub status: ThreadStatus,
-    pub token_usage: TokenUsage,
-}
-
-// Builder pattern for complex construction
-impl Thread {
-    pub fn builder(id: ThreadId) -> ThreadBuilder {
-        ThreadBuilder::new(id)
-    }
-}
-```
-
-#### Integration Points
-```rust
-// In zed/crates/agent/src/thread.rs
-use zed_agent_core::{Thread as CoreThread, Message as CoreMessage};
-
-impl Thread {
-    // Convert internal Thread to PODO
-    pub fn to_core(&self) -> CoreThread {
-        CoreThread {
-            id: self.id.clone().into(),
-            title: self.summary.as_ref().map(|s| s.text.clone()),
-            messages: self.messages.iter().map(|m| m.to_core()).collect(),
-            // ... other fields
-        }
-    }
-    
-    // Update from PODO (for testing, imports, etc)
-    pub fn from_core(core: CoreThread, cx: &mut ModelContext<Self>) -> Self {
-        // Implementation
-    }
-}
-```
-
-### 5.2 Phase 2 Details: Zed Integration
-
-#### Update Cargo.toml
-```toml
-# zed/crates/agent/Cargo.toml
-[dependencies]
-zed-agent-core = { path = "../zed-agent-core" }
-```
-
-#### Refactor Agent to Use PODOs
-```rust
-// Before: Tightly coupled to GPUI
-pub struct Thread {
-    id: ThreadId,
-    messages: Vec<Entity<Message>>,
-    // ... GPUI-specific fields
-}
-
-// After: PODO core with GPUI wrapper
-pub struct Thread {
-    core: zed_agent_core::Thread,
-    messages_entities: Vec<Entity<Message>>, // Keep GPUI entities separate
-    // ... GPUI-specific fields only
-}
-
-impl Thread {
-    pub fn core(&self) -> &zed_agent_core::Thread {
-        &self.core
-    }
-    
-    pub fn core_mut(&mut self) -> &mut zed_agent_core::Thread {
-        &mut self.core
-    }
-}
-```
-
-### 5.3 Phase 3 Details: Event System
-
-#### Reusing Zed's Event Patterns
-
-**Note**: Before implementing a new event system, investigate and potentially extract Zed's existing event mechanisms:
-
-1. **GPUI's Observer Pattern**: 
-   - `cx.observe()`, `cx.subscribe()` patterns
-   - Could extract the non-GPUI parts into a reusable trait
-   
-2. **Existing Event Infrastructure**:
-   - Check `gpui::subscription` and related modules
-   - Look for patterns in `workspace::Event`, `project::Event`
-   - Consider extracting common event traits/interfaces
-
-3. **Benefits of Reuse**:
-   - Consistent event handling across Zed
-   - Developers already familiar with patterns
-   - Proven performance characteristics
-   - Less code to maintain
-
-#### Event Bus in Core
-```rust
-// zed/crates/zed-agent-core/src/events/mod.rs
-// Could potentially be based on extracted Zed patterns
-pub struct EventBus {
-    subscribers: Arc<RwLock<Vec<Box<dyn EventListener>>>>,
-}
-
-impl EventBus {
-    pub fn emit(&self, event: AgentEvent) {
-        let subscribers = self.subscribers.read();
-        for subscriber in subscribers.iter() {
-            subscriber.on_event(&event);
-        }
-    }
-}
-```
-
-#### Wire Events in Agent
-```rust
-// In thread operations
-impl Thread {
-    pub fn add_message(&mut self, message: Message, cx: &mut ModelContext<Self>) {
-        // Update core
-        self.core.messages.push(message.to_core());
+        });
         
-        // Emit event using potential hybrid approach
-        if let Some(event_bus) = self.event_bus.as_ref() {
-            event_bus.emit(AgentEvent::MessageAdded {
-                thread_id: self.core.id.clone(),
-                message: message.to_core(),
-            });
-        }
-        
-        // Also use existing GPUI event system for backward compatibility
-        cx.emit(ThreadEvent::MessageAdded(message.id()));
-        cx.notify();
-    }
-}
-```
-
-#### Extraction Strategy for Event Systems
-
-If Zed's event systems prove reusable:
-
-1. **Create `zed-events-core` crate**:
-   - Extract non-GPUI event traits
-   - Common subscription management
-   - Event aggregation utilities
-
-2. **Gradual Migration**:
-   - Start with agent events
-   - Prove the pattern works
-   - Expand to other subsystems
-
-3. **Maintain Compatibility**:
-   - Keep GPUI integration layer
-   - Bridge between core and GPUI events
-   - No breaking changes to existing code
-
-### 5.4 Phase 4 Details: Network Bridge
-
-#### WebSocket Server in Zed
-```rust
-// zed/crates/zed/src/mobile_bridge.rs
-#[cfg(feature = "mobile-bridge")]
-pub mod mobile_bridge {
-    use zed_agent_core::{EventBus, AgentEvent};
-    use tokio::net::TcpListener;
-    use tokio_tungstenite::accept_async;
-    
-    pub struct MobileBridge {
-        port: u16,
-        event_bus: Arc<EventBus>,
-    }
-    
-    impl MobileBridge {
-        pub async fn start(&self) -> Result<()> {
-            let addr = format!("127.0.0.1:{}", self.port);
-            let listener = TcpListener::bind(&addr).await?;
-            
-            log::info!("Mobile bridge listening on {}", addr);
-            
-            while let Ok((stream, _)) = listener.accept().await {
-                let event_bus = self.event_bus.clone();
-                tokio::spawn(handle_connection(stream, event_bus));
-            }
-            
-            Ok(())
+        Self {
+            client,
+            event_bus,
+            _subscription: subscription,
         }
     }
 }
 ```
 
-#### Feature Flag in Cargo.toml
-```toml
-# zed/Cargo.toml
-[features]
-mobile-bridge = ["tokio-tungstenite", "zed-agent-core/events"]
+### 3.3 Mobile Client Subscription
+
+```dart
+class AgentEventService {
+  final RpcClient _rpcClient;
+  
+  Future<void> subscribeToEvents() async {
+    final request = SubscribeToAgentEvents()
+      ..includeHistory = true;
+      
+    final response = await _rpcClient.request(request);
+    
+    _rpcClient.notifications
+        .where((msg) => msg is AgentEventNotification)
+        .listen((notification) {
+          _handleAgentEvent(notification.event);
+        });
+  }
+}
 ```
 
-## 6. Migration Strategy
-
-### 6.1 Gradual Migration
-1. Start with read-only data (Thread, Message display)
-2. Add write operations (send message, create thread)
-3. Implement real-time updates (streaming, events)
-4. Full feature parity
-
-### 6.2 Testing During Migration
-- Maintain existing test suite
-- Add tests for PODO conversions
-- Test both old and new code paths
-- Performance benchmarks
-
-### 6.3 Rollback Plan
-- Keep changes behind feature flags initially
-- Maintain backward compatibility
-- Document all breaking changes
-- Provide migration guides
-
-## 7. Testing Strategy
-
-### Unit Tests
-- Test PODO conversions
-- Test serialization/deserialization
-- Test event transformations
-
-### Integration Tests
-- Test WebSocket communication
-- Test event streaming
-- Test concurrent connections
-
-### End-to-End Tests
-- Flutter app ↔ Extension ↔ Zed agent
-- Performance under load
-- Network failure scenarios
-
-## 8. Security Considerations
+## 4. Security Considerations
 
 ### Authentication
-- Generate secure token on first connection
-- Store in system keychain
-- Validate on each WebSocket connection
+- Only authenticated users can subscribe to their own agent events
+- Thread ownership validation before sending events
+- Rate limiting to prevent event spam
 
-### Authorization
-- Limit exposed operations
-- No file system access
-- Read-only agent data
+### Data Privacy
+- No agent data persisted on collab server
+- Events are pass-through only
+- TLS for all connections
 
-### Network Security
-- Localhost only by default
-- Optional TLS support
-- Rate limiting
-
-## 9. Performance Considerations
+## 5. Performance Considerations
 
 ### Event Batching
-- Batch rapid message updates
-- Configurable batch size/timeout
-- Prioritize user-initiated events
+- Batch high-frequency events (streaming)
+- Configurable flush intervals
+- Maximum batch sizes
 
-### Memory Management
-- Limit cached threads
-- Implement message pagination
-- Clean up disconnected clients
+### Connection Management
+- Heartbeat for connection health
+- Automatic reconnection with backoff
+- State synchronization on reconnect
 
-### Network Efficiency
-- Compress large messages
-- Delta updates for message streaming
-- Binary protocol option (MessagePack)
+## 6. Testing Strategy
 
-## 10. Success Criteria
+### Unit Tests
+- Subscription management logic
+- Event routing correctness
+- Proto conversion accuracy
 
-1. **Functionality**: All agent data accessible via extension
-2. **Performance**: < 50ms event latency
-3. **Reliability**: Auto-reconnection, offline queue
-4. **Security**: Secure authentication, no data leaks
-5. **Maintainability**: Clean separation, comprehensive tests
+### Integration Tests
+- End-to-end event flow
+- Disconnection handling
+- Multi-client scenarios
 
-## 11. Next Steps
+### Load Tests
+- High event frequency handling
+- Multiple concurrent subscribers
+- Network failure resilience
 
-1. **Create `zed-agent-core` crate**: Start with basic types
-2. **Prototype Integration**: Update one part of agent to use PODOs
-3. **Measure Impact**: Performance and code clarity
-4. **Get Team Buy-in**: Present approach to Zed maintainers
-5. **Implement Incrementally**: One module at a time
+## 7. Success Criteria
 
-## 12. Example PR Structure
+1. **Functionality**
+   - [ ] Agent events stream in real-time to mobile
+   - [ ] All event types properly converted and transmitted
+   - [ ] Reliable delivery with disconnection handling
 
-### PR 1: Introduce zed-agent-core
-- Add new crate with basic types
-- No integration yet
-- Comprehensive tests
+2. **Performance**
+   - [ ] Sub-100ms latency for local networks
+   - [ ] Handles 1000+ events/second
+   - [ ] Minimal CPU/memory overhead
 
-### PR 2: Use PODOs in Thread
-- Update Thread to use core types
-- Maintain full compatibility
-- Benchmark performance
+3. **Security**
+   - [ ] Users only see their own agent events
+   - [ ] No data leakage between users
+   - [ ] Secure authentication flow
 
-### PR 3: Add Event System
-- Implement event bus
-- Wire up basic events
-- Behind feature flag
+## 8. Rollout Plan
 
-### PR 4: Mobile Bridge
-- Add WebSocket server
-- Authentication system
-- Flutter integration tests
+### Stage 1: Internal Testing
+- Deploy to staging environment
+- Test with internal team
+- Monitor performance metrics
 
-## 13. Conclusion
+### Stage 2: Beta Release
+- Feature flag for select users
+- Gather feedback on mobile experience
+- Iterate on performance
 
-This approach of having Zed use `zed-agent-core` directly provides the cleanest architecture:
-- Single source of truth for data structures
-- No complex extension API changes needed
-- Better maintainability and type safety
-- Clear separation between data and UI concerns
+### Stage 3: General Availability
+- Enable for all users
+- Documentation and examples
+- Monitor adoption metrics
 
-The gradual migration strategy ensures we can deliver value incrementally while maintaining stability.
+## 9. Future Enhancements
+
+1. **Persistent History**
+   - Optional event storage
+   - Query historical events
+   - Replay capabilities
+
+2. **Advanced Features**
+   - Event filtering by type
+   - Compression for large events
+   - WebTransport for lower latency
+
+3. **Multi-Device Sync**
+   - Sync agent state across devices
+   - Collaborative agent sessions
+   - Handoff between devices
+
+## 10. Conclusion
+
+This approach leverages Zed's existing collaboration infrastructure to provide agent event streaming without creating new systems. By using the collab server, we get:
+
+- Unified connection management
+- Existing authentication/authorization
+- Battle-tested RPC protocol
+- Better battery life on mobile (single connection)
+
+The phased implementation allows for incremental development and testing, ensuring a stable and performant solution.
