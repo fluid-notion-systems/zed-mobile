@@ -16,6 +16,7 @@ COLLAB_PORT=8080
 ZED_DIR="vendor/zed"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+TMP_DIR="$PROJECT_ROOT/tmp"
 
 # Check if we're in the right directory
 if [ ! -d "$ZED_DIR" ]; then
@@ -93,22 +94,22 @@ ARCHIVE_BUCKET=""
 EOF
 fi
 
-# Create seed.json if it doesn't exist
-if [ ! -f "$PROJECT_ROOT/$ZED_DIR/seed.json" ]; then
-    echo -e "${YELLOW}Creating default seed.json...${NC}"
-    cat > "$PROJECT_ROOT/$ZED_DIR/seed.json" << EOF
-{
-  "admins": ["admin"],
-  "channels": ["general", "random"]
-}
-EOF
-fi
+# # Create seed.json if it doesn't exist
+# if [ ! -f "$PROJECT_ROOT/$ZED_DIR/seed.json" ]; then
+#     echo -e "${YELLOW}Creating default seed.json...${NC}"
+#     cat > "$PROJECT_ROOT/$ZED_DIR/seed.json" << EOF
+# {
+#   "admins": ["admin"],
+#   "channels": ["general", "random"]
+# }
+# EOF
+# fi
 
 # Run bootstrap if needed
-if [ ! -f ".bootstrap_done" ] || [ "$1" == "--reset" ]; then
+if [ ! -f "${TMP_DIR}/.bootstrap_done" ] || [ "$1" == "--reset" ]; then
     echo "Running bootstrap script..."
     ./script/bootstrap
-    touch .bootstrap_done
+    touch "${TMP_DIR}/.bootstrap_done"
 fi
 
 # Start collab server
