@@ -21,13 +21,15 @@
   - [x] **RPC Handler Integration** - All agent handlers using event queue
   - [x] **Connection Lifecycle Management** - Automatic cleanup
   - [x] **Strategic Debug Logging** - Production-ready observability
-- [ ] **Phase 5**: Event Broadcasting Enhancement (CURRENT) ← **WE ARE HERE**
+- [ ] **Phase 5**: Mobile Client Integration (CURRENT - MVP) 📱 ← **WE ARE HERE**
+  - [ ] Mobile-specific RPC handlers for agent events
+  - [ ] Real-time message streaming to mobile clients
+  - [ ] Mobile thread management and synchronization
+  - [ ] Mobile push notifications for agent responses
+- [ ] **Phase 6**: Enhanced Event Broadcasting (DEFERRED)
   - [ ] Enhanced subscription filtering and batching
   - [ ] Streaming text optimization for high-frequency events
   - [ ] Connection pool performance optimizations
-- [ ] **Phase 6**: Mobile client implementation
-  - [ ] Event stream handling
-  - [ ] UI integration
 - [ ] **Phase 7**: Performance optimization
   - [ ] Event batching for streaming text
   - [ ] Connection pooling optimizations
@@ -35,16 +37,20 @@
 
 ## Overview
 
-This document outlines the architecture and implementation plan for integrating agent functionality into Zed's collaboration system, enabling real-time agent event streaming to mobile clients. Based on the patterns established by `UpdateChannels` and the proto definitions from commit 264c3d93f4.
+This document outlines the architecture and implementation plan for integrating agent functionality into Zed's collaboration system, with **mobile client integration as the MVP priority**. The system enables real-time agent event streaming to mobile clients using Zed's existing collaboration infrastructure. Based on the patterns established by `UpdateChannels` and the proto definitions from commit 264c3d93f4.
+
+**Current Focus: Phase 5 - Mobile Client Integration** 📱
 
 ## Goals
 
-1. **Real-time Event Streaming**: Stream agent events (text generation, tool use, etc.) to mobile clients
-2. **Efficient Broadcasting**: Use Zed's existing collab infrastructure for minimal latency
-3. **Security**: Ensure users only see their own threads and events
-4. **Resilience**: Handle disconnections and reconnections gracefully
-5. **Event Queue Architecture**: Route events through centralized queue for database storage, real-time broadcast, and sync-replay
-6. **Event Sourcing**: Enable state reconstruction via snapshot + event replay patterns
+1. **Mobile-First MVP**: Prioritize mobile client functionality for agent interactions
+2. **Real-time Event Streaming**: Stream agent events (text generation, tool use, etc.) to mobile clients
+3. **Mobile-Optimized Performance**: Lightweight serialization and efficient bandwidth usage
+4. **Efficient Broadcasting**: Use Zed's existing collab infrastructure for minimal latency
+5. **Security**: Ensure users only see their own threads and events
+6. **Mobile Resilience**: Handle mobile network disconnections and reconnections gracefully
+7. **Event Queue Architecture**: Route events through centralized queue for database storage, real-time broadcast, and sync-replay
+8. **Event Sourcing**: Enable state reconstruction via snapshot + event replay patterns
 
 ## Architecture Components
 
@@ -707,30 +713,132 @@ class AgentEventService {
 }
 ```
 
-### Phase 5: Mobile Client Integration
+### Phase 5: Mobile Client Integration - MVP PRIORITY 📱
 
-#### 5.1 Subscription Flow
+#### 5.1 Mobile Agent Event Subscription (MVP Core)
 ```dart
-class AgentEventService {
+class MobileAgentEventService {
   StreamController<AgentEvent> _eventStream;
-
+  Map<String, DateTime> _lastEventTimestamps = {};
+  
+  // MVP: Core mobile subscription with offline handling
   Future<void> subscribeToThread(ThreadId threadId) async {
     final request = SubscribeToAgentEvents()
       ..threadId = threadId
-      ..sinceTimestamp = _lastEventTimestamp;
+      ..sinceTimestamp = _lastEventTimestamps[threadId.value];
 
-    final response = await _rpcClient.request(request);
-
-    // Process any recent events
-    for (final event in response.recentEvents) {
-      _eventStream.add(event);
+    try {
+      final response = await _rpcClient.request(request);
+      
+      // Process any missed events (crucial for mobile reconnections)
+      for (final event in response.recentEvents) {
+        _processAgentEvent(event);
+      }
+      
+      // Listen for real-time events
+      _subscribeToNotifications(threadId);
+    } catch (e) {
+      // Mobile-specific error handling
+      _handleConnectionError(threadId, e);
     }
+  }
+  
+  // MVP: Mobile-optimized event processing
+  void _processAgentEvent(AgentEvent event) {
+    _lastEventTimestamps[event.threadId.value] = event.timestamp.toDateTime();
+    _eventStream.add(event);
+    
+    // Mobile push notification for important events
+    if (event.type == 'agent_response') {
+      _sendPushNotification(event);
+    }
+  }
+}
+```
 
-    // Listen for new events
-    _rpcClient.notifications
-        .where((msg) => msg is AgentEventNotification)
-        .where((msg) => msg.event.threadId == threadId)
-        .listen((notification) => _eventStream.add(notification.event));
+#### 5.2 Mobile Thread Management (MVP)
+```dart
+class MobileThreadService {
+  // Efficient thread loading for mobile screens
+  Future<List<Thread>> getThreadsForMobile({
+    int limit = 20, // Mobile-optimized page size
+    int offset = 0,
+  }) async {
+    final request = GetAgentThreads()
+      ..limit = limit
+      ..offset = offset
+      ..includeArchived = false; // Mobile shows active only
+      
+    final response = await _rpcClient.request(request);
+    return response.threads.map(Thread.fromProto).toList();
+  }
+  
+  // Mobile thread creation with minimal data
+  Future<Thread> createThreadForMobile(String title, {String? profile}) async {
+    final request = CreateAgentThread()
+      ..title = title;
+    
+    if (profile != null) {
+      request.profile = AgentProfile()..name = profile;
+    }
+    
+    final response = await _rpcClient.request(request);
+    return Thread.fromProto(response.thread);
+  }
+}
+```
+
+#### 5.3 Mobile Message Streaming (MVP)
+```dart
+class MobileMessageService {
+  // Real-time message streaming optimized for mobile
+  Stream<AgentMessage> streamMessages(ThreadId threadId) {
+    return _agentEventService.eventStream
+        .where((event) => event.threadId == threadId)
+        .where((event) => event.type == 'message_chunk' || event.type == 'message_complete')
+        .map((event) => AgentMessage.fromEvent(event));
+  }
+  
+  // Mobile-optimized message sending
+  Future<void> sendMessage(ThreadId threadId, String text) async {
+    final request = SendAgentMessage()
+      ..threadId = threadId
+      ..text = text
+      ..mobileOptimized = true; // Flag for mobile-specific handling
+      
+    await _rpcClient.request(request);
+  }
+}
+```
+
+#### 5.4 Mobile Connection State Management (MVP)
+```dart
+class MobileConnectionManager {
+  ConnectionState _state = ConnectionState.disconnected;
+  Timer? _reconnectTimer;
+  
+  // Mobile-specific connection handling
+  void handleConnectionStateChange(ConnectionState newState) {
+    final oldState = _state;
+    _state = newState;
+    
+    if (newState == ConnectionState.connected && oldState != ConnectionState.connected) {
+      _onMobileReconnected();
+    } else if (newState == ConnectionState.disconnected) {
+      _onMobileDisconnected();
+    }
+  }
+  
+  // Mobile reconnection with exponential backoff
+  void _onMobileDisconnected() {
+    _startReconnectTimer();
+    _cacheCurrentState(); // Cache for offline access
+  }
+  
+  void _onMobileReconnected() {
+    _cancelReconnectTimer();
+    _syncWithServer(); // Sync cached changes
+    _resubscribeToThreads(); // Re-establish subscriptions
   }
 }
 ```
@@ -922,7 +1030,31 @@ impl StreamingBuffer {
 
 The Phase 4 implementation provides a robust, production-ready foundation for agent event handling that supports both reliable persistence and real-time collaboration.
 
-## Next Steps for Phase 5 (Event Broadcasting Enhancement) - CURRENT PHASE
+## Next Steps for Phase 5 (Mobile Client Integration) - CURRENT PHASE - MVP 📱 [L925-926]
+
+### Priority: Mobile-First MVP Implementation
+The mobile client integration is now the **highest priority** as it represents the core MVP functionality. Users need to be able to interact with agents from their mobile devices.
+
+### 5.1 Mobile Agent Event Subscription Pattern
+- Implement mobile-specific RPC handlers for agent events
+- Create lightweight event serialization for mobile bandwidth
+- Add mobile connection state management
+- Implement offline/online event synchronization
+
+### 5.2 Mobile Thread Management
+- Mobile-optimized thread creation and management
+- Efficient thread list loading for mobile screens
+- Background sync for thread updates
+- Mobile push notifications for agent responses
+
+### 5.3 Mobile Message Handling
+- Real-time message streaming to mobile clients
+- Mobile-specific message formatting and rendering
+- Efficient message history loading
+- Mobile typing indicators and presence
+
+### Phase 6: Enhanced Event Broadcasting (DEFERRED)
+Advanced event broadcasting features moved to Phase 6:
 
 1. **Enhanced Subscription Filtering**
    - Thread-specific event filtering with wildcards
